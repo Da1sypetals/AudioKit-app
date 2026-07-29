@@ -32,3 +32,10 @@ melband-roformer-mlx: https://github.com/Da1sypetals/melband-roformer-mlx
 
 1. 双击应该可以编辑参数（注意吸附到参数的允许的定义域之内）；
 2. bug: 比如yingmusic-svc，填充所有参数之后“开始转换”还是gray out的状态。
+
+---
+
+提供YingMusic音色库的改名功能，注意处理重名。选中后enter改名
+如何编译、构建、安装。对release文档进行trim，只保留人要做什么的流程。
+yingmusic-svc默认的音高应该是+12而不是0
+输出音频播放需要有一个进度条。旁边的按钮是播放和暂停，播放到结束之后，进度条自动归零，然后变成暂停状态

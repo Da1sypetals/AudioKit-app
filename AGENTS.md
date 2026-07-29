@@ -39,3 +39,5 @@
 禁止使用PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 在深度学习项目中，除非用户显式要求，否则**禁止**使用seed，避免随机机制失效。我们不需要复现性
+
+每次开发完一个app/的功能之后，你需要按照docs/release.md进行构建、安装到本机。

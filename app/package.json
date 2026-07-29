@@ -5,13 +5,17 @@
   "private": true,
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "sh ../tools/patch-electron-dev.sh && electron .",
     "build:native": "sh ../tools/build-native.sh",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "release": "sh ../tools/release.sh"
   },
   "build": {
     "appId": "com.daisy.audiokit",
     "productName": "AudioKit",
+    "directories": {
+      "output": "dist.noindex"
+    },
     "files": [
       "src/**/*",
       "package.json"
@@ -24,6 +28,10 @@
       {
         "from": "native",
         "to": "native"
+      },
+      {
+        "from": "dock-icon.png",
+        "to": "dock-icon.png"
       }
     ],
     "asarUnpack": [

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('audiokit', {
   listTimbre: () => ipcRenderer.invoke('timbre:list'),
   importTimbre: (filePaths) => ipcRenderer.invoke('timbre:import', filePaths),
   deleteTimbre: (name) => ipcRenderer.invoke('timbre:delete', name),
+  renameTimbre: (oldName, newStem) => ipcRenderer.invoke('timbre:rename', oldName, newStem),
 
   listInputs: () => ipcRenderer.invoke('input:list'),
   importInput: (filePaths) => ipcRenderer.invoke('input:import', filePaths),

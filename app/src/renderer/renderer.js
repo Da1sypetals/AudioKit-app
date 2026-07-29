@@ -1,6 +1,7 @@
 const ICONS = {
   play: '<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M4.5 3l8 5-8 5z"/></svg>',
-  stop: '<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>',
+  pause:
+    '<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><rect x="4" y="3" width="2.6" height="10" rx="0.5"/><rect x="9.4" y="3" width="2.6" height="10" rx="0.5"/></svg>',
   folder:
     '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M2 4.5a1 1 0 0 1 1-1h3.6l1.4 1.7h5a1 1 0 0 1 1 1v6.3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>',
   trash:
@@ -12,7 +13,7 @@ const state = {
   view: 'separation',
   running: false,
   sep: { input: null, numOverlap: 2 },
-  svc: { source: null, reference: null, steps: 16, pitchShift: 0, cfgRate: 0.7 },
+  svc: { source: null, reference: null, steps: 16, pitchShift: 12, cfgRate: 0.7 },
   timbres: [],
   inputs: [],
   outputs: [],
@@ -22,7 +23,9 @@ const $ = (id) => document.getElementById(id);
 const api = window.audiokit;
 
 let audioPlayer = null;
-let playingPath = null;
+let playbackPath = null;
+let isPlaying = false;
+let playbackProgress = 0;
 
 /* ---------------- helpers ---------------- */
 
@@ -68,7 +71,7 @@ function stageLabel(stage) {
 
 /* ---------------- rendering ---------------- */
 
-function renderFileList(element, files, { selectedPath, onSelect, onDelete, emptyText }) {
+function renderFileList(element, files, { selectedPath, onSelect, onDelete, emptyText, itemTitleSuffix = '' }) {
   element.innerHTML = '';
   if (files.length === 0) {
     const li = document.createElement('li');
@@ -84,7 +87,7 @@ function renderFileList(element, files, { selectedPath, onSelect, onDelete, empt
     const name = document.createElement('span');
     name.className = 'file-name';
     name.textContent = file.name;
-    name.title = file.path;
+    name.title = file.path + itemTitleSuffix;
     li.appendChild(name);
 
     const del = document.createElement('button');
@@ -126,6 +129,7 @@ function renderSidebar() {
   renderFileList($('timbre-list'), state.timbres, {
     selectedPath: state.svc.reference?.path,
     emptyText: '拖放音频到此处加入音色库',
+    itemTitleSuffix: '\n选中后按 Enter 改名',
     onSelect: (file) => {
       state.svc.reference = file;
       updateInputDisplays();
@@ -175,12 +179,40 @@ function updateInputDisplays() {
   setInputDisplay('svc-reference-name', state.svc.reference, '未选择 — 从左侧音色库选择');
 }
 
-function stopPlayback() {
-  if (audioPlayer) {
-    audioPlayer.pause();
-    audioPlayer = null;
-    playingPath = null;
+function onTimeUpdate() {
+  if (!audioPlayer || !audioPlayer.duration) return;
+  playbackProgress = audioPlayer.currentTime / audioPlayer.duration;
+  const fill = document.getElementById('playback-fill');
+  if (fill) fill.style.width = `${playbackProgress * 100}%`;
+}
+
+function onEnded() {
+  isPlaying = false;
+  playbackProgress = 0;
+  audioPlayer.currentTime = 0;
+  renderOutputs();
+}
+
+function playOrPause(filePath) {
+  if (playbackPath === filePath && audioPlayer) {
+    if (audioPlayer.paused) {
+      audioPlayer.play();
+      isPlaying = true;
+    } else {
+      audioPlayer.pause();
+      isPlaying = false;
+    }
+  } else {
+    if (audioPlayer) audioPlayer.pause();
+    playbackPath = filePath;
+    playbackProgress = 0;
+    audioPlayer = new Audio(`file://${filePath}`);
+    audioPlayer.addEventListener('timeupdate', onTimeUpdate);
+    audioPlayer.addEventListener('ended', onEnded);
+    audioPlayer.play();
+    isPlaying = true;
   }
+  renderOutputs();
 }
 
 function renderOutputs() {
@@ -236,16 +268,20 @@ function renderOutputs() {
       groupEl.appendChild(header);
 
       for (const file of group.files) {
+        const entry = document.createElement('div');
+        entry.className = 'output-entry';
+
         const row = document.createElement('div');
         row.className = 'output-file';
         row.draggable = true;
         row.title = `${file.path}\n可拖出到 Logic Pro 等宿主软件`;
 
+        const active = playbackPath === file.path;
         const playBtn = document.createElement('button');
         playBtn.className = 'play-btn';
-        playBtn.innerHTML = playingPath === file.path ? ICONS.stop : ICONS.play;
-        playBtn.title = playingPath === file.path ? '停止' : '播放';
-        playBtn.addEventListener('click', () => togglePlay(file.path));
+        playBtn.innerHTML = active && isPlaying ? ICONS.pause : ICONS.play;
+        playBtn.title = active && isPlaying ? '暂停' : '播放';
+        playBtn.addEventListener('click', () => playOrPause(file.path));
         row.appendChild(playBtn);
 
         const fileName = document.createElement('span');
@@ -266,11 +302,28 @@ function renderOutputs() {
         row.appendChild(revealBtn);
 
         row.addEventListener('dragstart', (event) => {
-          event.dataTransfer.effectAllowed = 'copy';
+          event.preventDefault();
+          event.stopPropagation();
           api.startDrag(file.path);
         });
 
-        groupEl.appendChild(row);
+        entry.appendChild(row);
+
+        if (active) {
+          const strip = document.createElement('div');
+          strip.className = 'playback';
+          const track = document.createElement('div');
+          track.className = 'playback-track';
+          const fill = document.createElement('div');
+          fill.className = 'playback-fill';
+          fill.id = 'playback-fill';
+          fill.style.width = `${playbackProgress * 100}%`;
+          track.appendChild(fill);
+          strip.appendChild(track);
+          entry.appendChild(strip);
+        }
+
+        groupEl.appendChild(entry);
       }
 
       container.appendChild(groupEl);
@@ -278,25 +331,67 @@ function renderOutputs() {
   }
 }
 
-function togglePlay(filePath) {
-  if (playingPath === filePath) {
-    stopPlayback();
-  } else {
-    stopPlayback();
-    audioPlayer = new Audio(`file://${filePath}`);
-    audioPlayer.addEventListener('ended', () => {
-      stopPlayback();
-      renderOutputs();
-    });
-    audioPlayer.play();
-    playingPath = filePath;
-  }
-  renderOutputs();
-}
-
 function updateRunButtons() {
   $('sep-run').disabled = state.running || !state.sep.input;
   $('svc-run').disabled = state.running || !state.svc.source || !state.svc.reference;
+}
+
+/* ---------------- timbre rename ---------------- */
+
+function startTimbreRename(file) {
+  renderSidebar();
+  const li = [...$('timbre-list').children].find(
+    (el) => el.querySelector('.file-name')?.title.startsWith(file.path)
+  );
+  if (!li) return;
+  const nameSpan = li.querySelector('.file-name');
+  const ext = file.name.slice(file.name.lastIndexOf('.'));
+  const stem = file.name.slice(0, file.name.length - ext.length);
+
+  const editor = document.createElement('input');
+  editor.className = 'inline-edit';
+  editor.value = stem;
+  nameSpan.replaceWith(editor);
+  editor.focus();
+  editor.select();
+
+  let finished = false;
+  const finish = async (commit) => {
+    if (finished) return;
+    finished = true;
+    if (commit) {
+      const result = await api.renameTimbre(file.name, editor.value);
+      if (!result.ok) {
+        setStatus(`改名失败: ${result.error}`, true);
+        finished = false;
+        editor.focus();
+        return;
+      }
+      state.timbres = await api.listTimbre();
+      const renamed = state.timbres.find((t) => t.path === result.path);
+      if (renamed) state.svc.reference = renamed;
+      updateInputDisplays();
+      setStatus(`已改名为 ${result.name}`);
+    }
+    renderSidebar();
+  };
+
+  editor.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') finish(true);
+    else if (event.key === 'Escape') finish(false);
+  });
+  editor.addEventListener('blur', () => finish(true));
+}
+
+function setupTimbreRename() {
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    if (state.view !== 'svc') return;
+    if (event.target.tagName === 'INPUT') return;
+    if (!state.svc.reference) return;
+    event.preventDefault();
+    startTimbreRename(state.svc.reference);
+  });
 }
 
 /* ---------------- data loading ---------------- */
@@ -540,6 +635,7 @@ function init() {
   setupParams();
   setupJobs();
   setupSidebarActions();
+  setupTimbreRename();
   refreshAll();
   setStatus('就绪');
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -43,6 +43,8 @@ const SEP_MODEL_PATH = path.join(modelsDir, 'separation', 'melband-roformer.safe
 let mainWindow = null;
 let worker = null;
 let jobCounter = 0;
+let dragIcon = null;
+let dragInProgress = false;
 
 function ensureDirs() {
   for (const dir of [timbreDir, inputDir, outputDir]) {
@@ -171,6 +173,22 @@ function stemOf(filePath) {
   return path.basename(filePath, path.extname(filePath));
 }
 
+function resolveDragFile(filePath) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+    throw new TypeError('拖拽文件路径必须是绝对路径');
+  }
+  const resolvedOutputDir = fs.realpathSync(outputDir);
+  const resolvedFile = fs.realpathSync(filePath);
+  const relativePath = path.relative(resolvedOutputDir, resolvedFile);
+  if (!relativePath || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+    throw new Error(`拖拽文件不在输出目录中: ${resolvedFile}`);
+  }
+  if (!fs.statSync(resolvedFile).isFile() || !isAudioFile(resolvedFile)) {
+    throw new Error(`拖拽目标不是音频文件: ${resolvedFile}`);
+  }
+  return resolvedFile;
+}
+
 function registerIpc() {
   ipcMain.handle('paths:get', () => ({
     timbreDir,
@@ -205,6 +223,22 @@ function registerIpc() {
     const target = path.join(timbreDir, path.basename(name));
     if (fs.existsSync(target)) fs.unlinkSync(target);
     return listAudioFiles(timbreDir);
+  });
+
+  ipcMain.handle('timbre:rename', (_event, oldName, newStem) => {
+    const oldPath = path.join(timbreDir, path.basename(oldName));
+    const ext = path.extname(oldName);
+    const clean = String(newStem).trim().replace(/[\\/]/g, '');
+    if (!clean) return { ok: false, error: '名称不能为空' };
+    const newPath = path.join(timbreDir, clean + ext);
+    if (newPath === oldPath) return { ok: true, name: clean + ext, path: newPath };
+    // APFS 不区分大小写：仅大小写变化时 existsSync 会误判为冲突
+    const sameFile = newPath.toLowerCase() === oldPath.toLowerCase();
+    if (!sameFile && fs.existsSync(newPath)) {
+      return { ok: false, error: `已存在同名文件 ${clean + ext}` };
+    }
+    fs.renameSync(oldPath, newPath);
+    return { ok: true, name: clean + ext, path: newPath };
   });
 
   ipcMain.handle('input:list', () => listAudioFiles(inputDir));
@@ -278,9 +312,15 @@ function registerIpc() {
     return { jobId };
   });
 
-  ipcMain.on('drag:start', async (event, filePath) => {
-    const icon = await app.getFileIcon(filePath, { size: 'normal' });
-    event.sender.startDrag({ file: filePath, icon });
+  ipcMain.on('drag:start', (event, filePath) => {
+    if (dragInProgress) return;
+    const resolvedFile = resolveDragFile(filePath);
+    dragInProgress = true;
+    try {
+      event.sender.startDrag({ file: resolvedFile, icon: dragIcon });
+    } finally {
+      dragInProgress = false;
+    }
   });
 }
 
@@ -302,12 +342,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const dockIcon = path.join(resourcesRoot, 'dock-icon.png');
+  dragIcon = nativeImage.createFromPath(dockIcon).resize({ width: 32, height: 32 });
+  if (dragIcon.isEmpty()) {
+    throw new Error(`无法加载拖拽图标: ${dockIcon}`);
+  }
   if (process.platform === 'darwin') {
-    const { nativeImage } = require('electron');
-    const dockIcon = path.join(resourcesRoot, 'dock-icon.png');
-    if (fs.existsSync(dockIcon)) {
-      app.dock.setIcon(nativeImage.createFromPath(dockIcon));
-    }
+    app.dock.setIcon(nativeImage.createFromPath(dockIcon));
   }
   ensureDirs();
   registerIpc();

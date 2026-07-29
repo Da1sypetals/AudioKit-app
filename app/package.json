@@ -7,7 +7,6 @@
   "scripts": {
     "start": "electron .",
     "build:native": "sh ../tools/build-native.sh",
-    "postinstall": "sh ../tools/patch-electron-dev.sh",
     "dist": "electron-builder"
   },
   "build": {

@@ -1,0 +1,49 @@
+{
+  "name": "audiokit",
+  "productName": "AudioKit",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:native": "sh ../tools/build-native.sh",
+    "postinstall": "sh ../tools/patch-electron-dev.sh",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.daisy.audiokit",
+    "productName": "AudioKit",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "Models",
+        "to": "Models"
+      },
+      {
+        "from": "native",
+        "to": "native"
+      }
+    ],
+    "asarUnpack": [
+      "src/worker.js",
+      "node_modules/koffi/**"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "icon.icns",
+      "target": [
+        "dir"
+      ]
+    }
+  },
+  "dependencies": {
+    "koffi": "^3.1.2"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  }
+}

@@ -1,0 +1,330 @@
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { Worker } = require('worker_threads');
+
+app.setName('AudioKit');
+app.setAboutPanelOptions({ applicationName: 'AudioKit' });
+
+const AUDIO_EXTENSIONS = new Set([
+  '.wav',
+  '.mp3',
+  '.m4a',
+  '.aac',
+  '.flac',
+  '.ogg',
+  '.aiff',
+  '.aif',
+  '.mp4',
+  '.opus',
+]);
+
+const resourcesRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+const modelsDir = path.join(resourcesRoot, 'Models');
+const nativeLibPath = path.join(resourcesRoot, 'native', 'libaudiokit_native.dylib');
+
+const userDataDir = app.getPath('userData');
+const timbreDir = path.join(userDataDir, 'audio', 'timbre');
+const cacheRoot = path.join(os.homedir(), 'Library', 'Caches', 'AudioKit');
+const inputDir = path.join(cacheRoot, 'input');
+const outputDir = path.join(cacheRoot, 'output');
+
+const SVC_MODEL_PATHS = {
+  whisper: path.join(modelsDir, 'yingmusic', 'whisper.safetensors'),
+  fcpe: path.join(modelsDir, 'yingmusic', 'fcpe.safetensors'),
+  campplus: path.join(modelsDir, 'yingmusic', 'campplus.safetensors'),
+  yingmusic: path.join(modelsDir, 'yingmusic', 'yingmusic_step_000640.safetensors'),
+  pupuVocoder: path.join(modelsDir, 'yingmusic', 'pupu-vocoder-large.safetensors'),
+  pcNsfHifigan: path.join(modelsDir, 'yingmusic', 'pc-nsf-hifigan.safetensors'),
+};
+const SEP_MODEL_PATH = path.join(modelsDir, 'separation', 'melband-roformer.safetensors');
+
+let mainWindow = null;
+let worker = null;
+let jobCounter = 0;
+
+function ensureDirs() {
+  for (const dir of [timbreDir, inputDir, outputDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+function ensureWorker() {
+  if (worker) return worker;
+  worker = new Worker(path.join(__dirname, 'worker.js'), {
+    workerData: { nativeLibPath },
+  });
+  worker.on('message', (msg) => {
+    if (msg.type === 'ready') return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('job:event', msg);
+    }
+  });
+  worker.on('error', (error) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('job:event', {
+        type: 'error',
+        jobId: null,
+        message: `推理线程错误: ${error.message}`,
+      });
+    }
+  });
+  worker.on('exit', (code) => {
+    worker = null;
+    if (code !== 0) {
+      console.error(`worker exited with code ${code}`);
+    }
+  });
+  return worker;
+}
+
+function isAudioFile(filePath) {
+  return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function timestamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+function copyInto(sourcePath, destDir) {
+  const base = path.basename(sourcePath);
+  const ext = path.extname(base);
+  const stem = path.basename(base, ext);
+  let dest = path.join(destDir, base);
+  let counter = 2;
+  while (fs.existsSync(dest)) {
+    dest = path.join(destDir, `${stem}-${counter}${ext}`);
+    counter += 1;
+  }
+  fs.copyFileSync(sourcePath, dest);
+  // copyFileSync 保留源 mtime；刷新为导入时间，保证最新导入排在列表最前
+  const now = new Date();
+  fs.utimesSync(dest, now, now);
+  return dest;
+}
+
+function audioFileInfo(filePath) {
+  const stat = fs.statSync(filePath);
+  return {
+    name: path.basename(filePath),
+    path: filePath,
+    size: stat.size,
+    mtime: stat.mtimeMs,
+  };
+}
+
+function listAudioFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .map((name) => path.join(dir, name))
+    .filter((filePath) => fs.statSync(filePath).isFile() && isAudioFile(filePath))
+    .map(audioFileInfo)
+    .sort((a, b) => b.mtime - a.mtime);
+}
+
+function listOutputs() {
+  if (!fs.existsSync(outputDir)) return [];
+  const groups = [];
+  for (const name of fs.readdirSync(outputDir)) {
+    const dir = path.join(outputDir, name);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    let meta = {};
+    const metaPath = path.join(dir, 'meta.json');
+    if (fs.existsSync(metaPath)) {
+      meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    }
+    const files = fs
+      .readdirSync(dir)
+      .map((fileName) => path.join(dir, fileName))
+      .filter((filePath) => fs.statSync(filePath).isFile() && isAudioFile(filePath))
+      .map(audioFileInfo)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    groups.push({
+      dir,
+      name,
+      type: meta.type || 'unknown',
+      source: meta.source || '',
+      params: meta.params || {},
+      mtime: fs.statSync(dir).mtimeMs,
+      files,
+    });
+  }
+  return groups.sort((a, b) => b.mtime - a.mtime);
+}
+
+function createOutputGroup(type, source, params, stemParts) {
+  const dirName = `${timestamp()}-${stemParts.join('-')}`;
+  const dir = path.join(outputDir, dirName);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'meta.json'),
+    JSON.stringify({ type, source, params, createdAt: Date.now() }, null, 2)
+  );
+  return dir;
+}
+
+function stemOf(filePath) {
+  return path.basename(filePath, path.extname(filePath));
+}
+
+function registerIpc() {
+  ipcMain.handle('paths:get', () => ({
+    timbreDir,
+    inputDir,
+    outputDir,
+    modelsDir,
+  }));
+
+  ipcMain.handle('dialog:pick-audio', async (_event, options = {}) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: options.multi ? ['openFile', 'multiSelections'] : ['openFile'],
+      filters: [
+        { name: '音频文件', extensions: [...AUDIO_EXTENSIONS].map((ext) => ext.slice(1)) },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle('timbre:list', () => listAudioFiles(timbreDir));
+
+  ipcMain.handle('timbre:import', (_event, filePaths) => {
+    const imported = [];
+    for (const filePath of filePaths) {
+      if (!isAudioFile(filePath)) continue;
+      imported.push(audioFileInfo(copyInto(filePath, timbreDir)));
+    }
+    return imported;
+  });
+
+  ipcMain.handle('timbre:delete', (_event, name) => {
+    const target = path.join(timbreDir, path.basename(name));
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+    return listAudioFiles(timbreDir);
+  });
+
+  ipcMain.handle('input:list', () => listAudioFiles(inputDir));
+
+  ipcMain.handle('input:import', (_event, filePaths) => {
+    const imported = [];
+    for (const filePath of filePaths) {
+      if (!isAudioFile(filePath)) continue;
+      imported.push(audioFileInfo(copyInto(filePath, inputDir)));
+    }
+    return imported;
+  });
+
+  ipcMain.handle('input:delete', (_event, name) => {
+    const target = path.join(inputDir, path.basename(name));
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+    return listAudioFiles(inputDir);
+  });
+
+  ipcMain.handle('outputs:list', () => listOutputs());
+
+  ipcMain.handle('outputs:delete', (_event, dirName) => {
+    const target = path.join(outputDir, path.basename(dirName));
+    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true });
+    return listOutputs();
+  });
+
+  ipcMain.handle('file:reveal', (_event, filePath) => {
+    shell.showItemInFolder(filePath);
+  });
+
+  ipcMain.handle('job:sep', (event, options) => {
+    const { inputPath, numOverlap } = options;
+    const jobId = `sep-${++jobCounter}`;
+    const groupDir = createOutputGroup('separation', path.basename(inputPath), { numOverlap }, [
+      stemOf(inputPath),
+      'separation',
+    ]);
+    ensureWorker().postMessage({
+      type: 'run-sep',
+      jobId,
+      modelPath: SEP_MODEL_PATH,
+      input: inputPath,
+      vocalOut: path.join(groupDir, `${stemOf(inputPath)}_vocal.wav`),
+      instrumentalOut: path.join(groupDir, `${stemOf(inputPath)}_instrumental.wav`),
+      numOverlap,
+    });
+    return { jobId };
+  });
+
+  ipcMain.handle('job:svc', (event, options) => {
+    const { sourcePath, referencePath, diffusionSteps, pitchShift, cfgRate } = options;
+    const jobId = `svc-${++jobCounter}`;
+    const groupDir = createOutputGroup(
+      'svc',
+      path.basename(sourcePath),
+      { diffusionSteps, pitchShift, cfgRate, reference: path.basename(referencePath) },
+      [stemOf(sourcePath), 'to', stemOf(referencePath)]
+    );
+    ensureWorker().postMessage({
+      type: 'run-svc',
+      jobId,
+      paths: SVC_MODEL_PATHS,
+      source: sourcePath,
+      reference: referencePath,
+      diffusionSteps,
+      pitchShift,
+      cfgRate,
+      output: path.join(groupDir, `${stemOf(sourcePath)}_to_${stemOf(referencePath)}.wav`),
+    });
+    return { jobId };
+  });
+
+  ipcMain.on('drag:start', async (event, filePath) => {
+    const icon = await app.getFileIcon(filePath, { size: 'normal' });
+    event.sender.startDrag({ file: filePath, icon });
+  });
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    minWidth: 980,
+    minHeight: 600,
+    backgroundColor: '#ffffff',
+    title: 'AudioKit',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+}
+
+app.whenReady().then(() => {
+  if (process.platform === 'darwin') {
+    const { nativeImage } = require('electron');
+    const dockIcon = path.join(resourcesRoot, 'dock-icon.png');
+    if (fs.existsSync(dockIcon)) {
+      app.dock.setIcon(nativeImage.createFromPath(dockIcon));
+    }
+  }
+  ensureDirs();
+  registerIpc();
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('quit', () => {
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
+});

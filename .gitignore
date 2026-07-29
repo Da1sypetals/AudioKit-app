@@ -1,0 +1,21 @@
+.DS_Store
+node_modules/
+dist/
+
+# Rust
+native/target/
+
+# 模型权重（checkpoints 为源，app/Models 为硬链接）
+checkpoints/
+app/Models/
+
+# 构建产物
+app/native/
+app/icon.icns
+app/dock-icon.png
+icon/icon-1024.png
+icon/icon.icns
+icon/icon.iconset/
+
+# 测试中间产物
+scratch/

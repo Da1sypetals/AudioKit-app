@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' file:; style-src 'self' 'unsafe-inline'">
+  <title>AudioKit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="activitybar">
+      <button class="activity active" data-view="separation" title="伴奏分离">
+        <span class="activity-label">伴奏分离</span>
+      </button>
+      <button class="activity" data-view="svc" title="YingMusic SVC">
+        <span class="activity-label">YingMusic-SVC</span>
+      </button>
+    </nav>
+
+    <aside id="sidebar">
+      <div class="pane" id="sidebar-separation">
+        <div class="pane-section" id="sep-input-pane">
+          <div class="pane-header">
+            <span>输入文件</span>
+            <button class="icon-btn" id="sep-add-input" title="导入音频"></button>
+          </div>
+          <ul class="file-list" id="sep-input-list"></ul>
+        </div>
+      </div>
+
+      <div class="pane hidden" id="sidebar-svc">
+        <div class="pane-section" id="timbre-pane">
+          <div class="pane-header">
+            <span>音色库</span>
+            <button class="icon-btn" id="svc-add-timbre" title="导入音色参考音频"></button>
+          </div>
+          <ul class="file-list selectable" id="timbre-list"></ul>
+        </div>
+        <div class="pane-section" id="svc-input-pane">
+          <div class="pane-header">
+            <span>输入文件</span>
+            <button class="icon-btn" id="svc-add-input" title="导入音频"></button>
+          </div>
+          <ul class="file-list" id="svc-input-list"></ul>
+        </div>
+      </div>
+    </aside>
+
+    <main id="content">
+      <section id="view-separation">
+        <header class="view-header">
+          <h1>伴奏分离</h1>
+          <span class="model-tag">MelBand Roformer</span>
+        </header>
+
+        <div class="section-title">输入</div>
+        <div class="input-display">
+          <span id="sep-input-name" class="input-name unset">未选择 — 从左侧列表选择，或直接拖入音频</span>
+        </div>
+
+        <div class="section-title">参数</div>
+        <div class="params">
+          <div class="param">
+            <div class="param-label">
+              <span>重叠次数</span>
+              <span class="param-hint">chunk 重叠倍数，越高接缝越平滑，耗时线性增加</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="sep-overlap" min="1" max="8" step="1" value="2">
+              <span class="param-value" id="sep-overlap-value">2</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="primary-btn" id="sep-run">开始分离</button>
+
+        <div class="section-title">输出</div>
+        <div class="outputs" id="sep-outputs"></div>
+      </section>
+
+      <section id="view-svc" class="hidden">
+        <header class="view-header">
+          <h1>YingMusic SVC</h1>
+          <span class="model-tag">歌声转换</span>
+        </header>
+
+        <div class="section-title">输入</div>
+        <div class="input-display">
+          <span id="svc-input-name" class="input-name unset">未选择 — 从左侧列表选择，或直接拖入音频</span>
+        </div>
+
+        <div class="section-title">参考音色</div>
+        <div class="input-display">
+          <span id="svc-reference-name" class="input-name unset">未选择 — 从左侧音色库选择</span>
+        </div>
+
+        <div class="section-title">参数</div>
+        <div class="params">
+          <div class="param">
+            <div class="param-label">
+              <span>扩散步数</span>
+              <span class="param-hint">diffusion 采样步数，越高越精细，耗时线性增加</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="svc-steps" min="1" max="64" step="1" value="16">
+              <span class="param-value" id="svc-steps-value">16</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>音高偏移</span>
+              <span class="param-hint">半音为单位，正值升调、负值降调</span>
+            </div>
+            <div class="param-control">
+              <button class="step-btn" id="svc-pitch-minus12" title="直接设为 -12">-12</button>
+              <input type="range" id="svc-pitch" min="-24" max="24" step="1" value="0">
+              <span class="param-value" id="svc-pitch-value">0</span>
+              <button class="step-btn" id="svc-pitch-plus12" title="直接设为 +12">+12</button>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>CFG 强度</span>
+              <span class="param-hint">classifier-free guidance 比例，越高越贴近参考音色</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="svc-cfg" min="0" max="2" step="0.05" value="0.7">
+              <span class="param-value" id="svc-cfg-value">0.70</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="primary-btn" id="svc-run">开始转换</button>
+
+        <div class="section-title">输出</div>
+        <div class="outputs" id="svc-outputs"></div>
+      </section>
+    </main>
+  </div>
+
+  <footer id="statusbar">
+    <span id="status-app-name">AudioKit</span>
+    <span id="status-text">就绪</span>
+    <div id="status-progress" class="hidden"><div id="status-progress-fill"></div></div>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

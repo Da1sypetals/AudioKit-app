@@ -1,0 +1,17 @@
+[package]
+name = "audiokit-native"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0.102"
+babycat = "0.0.15"
+mb-roformer-mlx = { path = "../melband-roformer-mlx" }
+mlx-rs = { git = "https://github.com/blossom-slopware/mlx-rs.git", rev = "b81194a47c2c6ba4ecb0cf370e4f0d941f52dd5d", version = "0.25.3", features = ["accelerate", "metal", "safetensors"] }
+yingmusic = { path = "../yingmusic-svc-mlx" }
+
+[profile.release]
+debug = true

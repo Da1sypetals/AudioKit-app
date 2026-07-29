@@ -1,0 +1,6 @@
+[submodule "yingmusic-svc-mlx"]
+	path = yingmusic-svc-mlx
+	url = git@github.com:Da1sypetals/yingmusic-svc-mlx.git
+[submodule "melband-roformer-mlx"]
+	path = melband-roformer-mlx
+	url = git@github.com:Da1sypetals/melband-roformer-mlx.git

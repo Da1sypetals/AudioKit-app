@@ -93,6 +93,16 @@ body {
   overflow-y: auto;
 }
 
+.pane {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.input-drop-pane {
+  flex: 1;
+}
+
 .pane-section.dragover {
   outline: 1px dashed var(--accent);
   outline-offset: -1px;
@@ -480,7 +490,8 @@ body {
 }
 
 .playback {
-  padding: 0 10px 5px 26px;
+  padding: 4px 10px 5px 26px;
+  cursor: pointer;
 }
 
 .playback-track {

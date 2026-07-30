@@ -26,6 +26,7 @@ let audioPlayer = null;
 let playbackPath = null;
 let isPlaying = false;
 let playbackProgress = 0;
+let seeking = false;
 
 /* ---------------- helpers ---------------- */
 
@@ -180,10 +181,40 @@ function updateInputDisplays() {
 }
 
 function onTimeUpdate() {
-  if (!audioPlayer || !audioPlayer.duration) return;
+  if (!audioPlayer || !audioPlayer.duration || seeking) return;
   playbackProgress = audioPlayer.currentTime / audioPlayer.duration;
   const fill = document.getElementById('playback-fill');
   if (fill) fill.style.width = `${playbackProgress * 100}%`;
+}
+
+function seekTo(clientX, track) {
+  if (!audioPlayer || !audioPlayer.duration) return;
+  const rect = track.getBoundingClientRect();
+  const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  playbackProgress = fraction;
+  const fill = document.getElementById('playback-fill');
+  if (fill) fill.style.width = `${fraction * 100}%`;
+  audioPlayer.currentTime = fraction * audioPlayer.duration;
+}
+
+function setupSeek(strip, track) {
+  strip.addEventListener('pointerdown', (event) => {
+    if (!audioPlayer || !audioPlayer.duration) return;
+    seeking = true;
+    seekTo(event.clientX, track);
+    event.preventDefault();
+  });
+}
+
+function setupSeekGlobal() {
+  window.addEventListener('pointermove', (event) => {
+    if (!seeking) return;
+    const track = document.querySelector('.playback-track');
+    if (track) seekTo(event.clientX, track);
+  });
+  window.addEventListener('pointerup', () => {
+    seeking = false;
+  });
 }
 
 function onEnded() {
@@ -216,6 +247,7 @@ function playOrPause(filePath) {
 }
 
 function renderOutputs() {
+  seeking = false;
   for (const [containerId, type] of [
     ['sep-outputs', 'separation'],
     ['svc-outputs', 'svc'],
@@ -321,6 +353,7 @@ function renderOutputs() {
           track.appendChild(fill);
           strip.appendChild(track);
           entry.appendChild(strip);
+          setupSeek(strip, track);
         }
 
         groupEl.appendChild(entry);
@@ -636,6 +669,7 @@ function init() {
   setupJobs();
   setupSidebarActions();
   setupTimbreRename();
+  setupSeekGlobal();
   refreshAll();
   setStatus('就绪');
 }

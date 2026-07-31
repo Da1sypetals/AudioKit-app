@@ -1,3 +1,8 @@
+*.wav
+*.mp3
+*.flac
+*.mp4
+
 .DS_Store
 node_modules/
 dist/

@@ -122,8 +122,27 @@
               <span class="param-hint">classifier-free guidance 比例，越高越贴近参考音色</span>
             </div>
             <div class="param-control">
-              <input type="range" id="svc-cfg" min="0" max="2" step="0.05" value="0.7">
-              <span class="param-value" id="svc-cfg-value">0.70</span>
+              <input type="range" id="svc-cfg" min="0" max="2" step="0.05" value="0.9">
+              <span class="param-value" id="svc-cfg-value">0.90</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>Input gain</span>
+              <span class="param-hint">进入特征提取前应用到输入音频，单位 dB</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="svc-input-gain" min="-12" max="3" step="0.5" value="-2">
+              <span class="param-value" id="svc-input-gain-value">-2.0 dB</span>
+            </div>
+          </div>
+          <div class="param">
+            <label class="param-label" for="svc-resynth-f0">
+              <span>resynth w/ explicit f0</span>
+              <span class="param-hint">额外使用 pc-nsf-hifigan 输出显式 F0 重合成音频</span>
+            </label>
+            <div class="param-control checkbox-control">
+              <input type="checkbox" id="svc-resynth-f0" checked>
             </div>
           </div>
         </div>

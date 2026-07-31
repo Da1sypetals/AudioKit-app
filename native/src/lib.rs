@@ -123,12 +123,19 @@ pub unsafe extern "C" fn ak_svc_infer(
     diffusion_steps: c_int,
     pitch_shift: c_double,
     cfg_rate: c_double,
+    input_gain_db: c_double,
+    resynth_with_explicit_f0: c_int,
     output: *const c_char,
+    re_f0_output: *const c_char,
     on_progress: Option<AkProgressCallback>,
 ) -> c_int {
     let result = run_ffi("ak_svc_infer", || {
         ensure!(!engine.is_null(), "engine handle is null");
         ensure!(diffusion_steps > 0, "diffusion_steps must be positive");
+        ensure!(
+            matches!(resynth_with_explicit_f0, 0 | 1),
+            "resynth_with_explicit_f0 must be 0 or 1"
+        );
         let engine = unsafe { &mut *engine };
         let Engine::Svc(svc) = engine else {
             anyhow::bail!("engine handle is not an SVC engine");
@@ -136,10 +143,18 @@ pub unsafe extern "C" fn ak_svc_infer(
         let source = read_cstr(source)?;
         let reference = read_cstr(reference)?;
         let output = read_cstr(output)?;
+        let resynth_with_explicit_f0 = resynth_with_explicit_f0 == 1;
+        let re_f0_output = if resynth_with_explicit_f0 {
+            Some(read_cstr(re_f0_output)?)
+        } else {
+            None
+        };
         let params = InferParams {
             diffusion_steps: diffusion_steps as usize,
             pitch_shift: pitch_shift as f32,
             cfg_rate: cfg_rate as f32,
+            input_gain_db: input_gain_db as f32,
+            resynth_with_explicit_f0,
         };
         let mut report = progress_trampoline(on_progress);
         svc.infer(
@@ -147,6 +162,7 @@ pub unsafe extern "C" fn ak_svc_infer(
             Path::new(&reference),
             &params,
             Path::new(&output),
+            re_f0_output.as_deref().map(Path::new),
             Some(&mut |event: Progress| match event {
                 Progress::Stage(name) => report(name, -1.0),
                 Progress::Diffusion { done, total } => {

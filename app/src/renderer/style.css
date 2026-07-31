@@ -337,6 +337,47 @@ body {
   background: var(--fg-faint);
 }
 
+.checkbox-control {
+  justify-content: flex-end;
+}
+
+.checkbox-control input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--fg-dim);
+  border-radius: 2px;
+  background: var(--bg);
+  cursor: pointer;
+  position: relative;
+}
+
+.checkbox-control input[type="checkbox"]:hover {
+  border-color: var(--fg);
+}
+
+.checkbox-control input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.checkbox-control input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.checkbox-control input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 .param-value {
   min-width: 38px;
   text-align: right;

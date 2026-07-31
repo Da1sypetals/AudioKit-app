@@ -12,7 +12,7 @@ const akSvcCreate = lib.func(
 const akSepCreate = lib.func('void *ak_sep_create(str model_path)');
 const akEngineFree = lib.func('void ak_engine_free(void *engine)');
 const akSvcInfer = lib.func(
-  'int ak_svc_infer(void *engine, str source, str reference, int diffusion_steps, double pitch_shift, double cfg_rate, str output, ak_progress_cb *cb)'
+  'int ak_svc_infer(void *engine, str source, str reference, int diffusion_steps, double pitch_shift, double cfg_rate, double input_gain_db, int resynth_with_explicit_f0, str output, str re_f0_output, ak_progress_cb *cb)'
 );
 const akSepInfer = lib.func(
   'int ak_sep_infer(void *engine, str input, str vocal_out, str instrumental_out, int num_overlap, ak_progress_cb *cb)'
@@ -83,11 +83,17 @@ parentPort.on('message', (msg) => {
         msg.diffusionSteps,
         msg.pitchShift,
         msg.cfgRate,
+        msg.inputGainDb,
+        msg.resynthWithExplicitF0 ? 1 : 0,
         msg.output,
+        msg.reF0Output,
         makeProgressCallback(jobId)
       );
       if (rc !== 0) throw new Error(lastError());
-      parentPort.postMessage({ type: 'done', jobId, outputs: [msg.output] });
+      const outputs = msg.resynthWithExplicitF0
+        ? [msg.output, msg.reF0Output]
+        : [msg.output];
+      parentPort.postMessage({ type: 'done', jobId, outputs });
     } else if (type === 'run-sep') {
       const engine = getSepEngine(msg.modelPath);
       const rc = akSepInfer(

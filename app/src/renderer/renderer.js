@@ -13,7 +13,15 @@ const state = {
   view: 'separation',
   running: false,
   sep: { input: null, numOverlap: 2 },
-  svc: { source: null, reference: null, steps: 16, pitchShift: 12, cfgRate: 0.7 },
+  svc: {
+    source: null,
+    reference: null,
+    steps: 16,
+    pitchShift: 12,
+    cfgRate: 0.9,
+    inputGainDb: -2,
+    resynthWithExplicitF0: true,
+  },
   timbres: [],
   inputs: [],
   outputs: [],
@@ -480,6 +488,10 @@ function setPitch(value) {
   $('svc-pitch-value').textContent = value > 0 ? `+${value}` : `${value}`;
 }
 
+function formatDb(value) {
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`;
+}
+
 function setupParams() {
   const bind = (id, valueId, get, set, format) => {
     const slider = $(id);
@@ -535,9 +547,21 @@ function setupParams() {
   bind('svc-steps', 'svc-steps-value', () => state.svc.steps, (v) => (state.svc.steps = v), (v) => `${v}`);
   bind('svc-pitch', 'svc-pitch-value', () => state.svc.pitchShift, (v) => (state.svc.pitchShift = v), (v) => (v > 0 ? `+${v}` : `${v}`));
   bind('svc-cfg', 'svc-cfg-value', () => state.svc.cfgRate, (v) => (state.svc.cfgRate = v), (v) => v.toFixed(2));
+  bind(
+    'svc-input-gain',
+    'svc-input-gain-value',
+    () => state.svc.inputGainDb,
+    (v) => (state.svc.inputGainDb = v),
+    formatDb
+  );
 
   $('svc-pitch-plus12').addEventListener('click', () => setPitch(12));
   $('svc-pitch-minus12').addEventListener('click', () => setPitch(-12));
+  const resynthToggle = $('svc-resynth-f0');
+  resynthToggle.checked = state.svc.resynthWithExplicitF0;
+  resynthToggle.addEventListener('change', () => {
+    state.svc.resynthWithExplicitF0 = resynthToggle.checked;
+  });
 }
 
 function setupJobs() {
@@ -570,6 +594,8 @@ function setupJobs() {
         diffusionSteps: state.svc.steps,
         pitchShift: state.svc.pitchShift,
         cfgRate: state.svc.cfgRate,
+        inputGainDb: state.svc.inputGainDb,
+        resynthWithExplicitF0: state.svc.resynthWithExplicitF0,
       });
     } catch (error) {
       state.running = false;

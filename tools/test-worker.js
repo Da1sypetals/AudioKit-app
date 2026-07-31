@@ -20,6 +20,8 @@ const SVC_PATHS = {
 };
 
 const mode = process.argv[2] || 'all';
+const pupuOnlyReF0Output = path.join(outRoot, 'test_svc_pupu_only_re_f0.wav');
+if (fs.existsSync(pupuOnlyReF0Output)) fs.unlinkSync(pupuOnlyReF0Output);
 
 const worker = new Worker(path.join(root, 'app', 'src', 'worker.js'), {
   workerData: { nativeLibPath },
@@ -41,14 +43,31 @@ if (mode === 'sep' || mode === 'all') {
 if (mode === 'svc' || mode === 'all') {
   jobs.push({
     type: 'run-svc',
-    jobId: 'test-svc',
+    jobId: 'test-svc-explicit-f0',
     paths: SVC_PATHS,
     source: path.join(root, 'yingmusic-svc-mlx', 'audio', '骨簪干音.wav'),
     reference: path.join(root, 'yingmusic-svc-mlx', 'audio', 'timbre', 'xiaoke.wav'),
     diffusionSteps: 4,
     pitchShift: 14.0,
-    cfgRate: 0.7,
+    cfgRate: 0.9,
+    inputGainDb: -2.0,
+    resynthWithExplicitF0: true,
     output: path.join(outRoot, 'test_svc.wav'),
+    reF0Output: path.join(outRoot, 'test_svc_re_f0.wav'),
+  });
+  jobs.push({
+    type: 'run-svc',
+    jobId: 'test-svc-pupu-only',
+    paths: SVC_PATHS,
+    source: path.join(root, 'yingmusic-svc-mlx', 'audio', '骨簪干音.wav'),
+    reference: path.join(root, 'yingmusic-svc-mlx', 'audio', 'timbre', 'xiaoke.wav'),
+    diffusionSteps: 4,
+    pitchShift: 14.0,
+    cfgRate: 0.9,
+    inputGainDb: -2.0,
+    resynthWithExplicitF0: false,
+    output: path.join(outRoot, 'test_svc_pupu_only.wav'),
+    reF0Output: pupuOnlyReF0Output,
   });
 }
 
@@ -79,6 +98,10 @@ worker.on('message', (msg) => {
     console.error(`\n[test] ${msg.jobId} ERROR: ${msg.message}`);
   }
   if (pending === 0) {
+    if (fs.existsSync(pupuOnlyReF0Output)) {
+      console.error(`\n[test] unexpected output: ${pupuOnlyReF0Output}`);
+      failed = true;
+    }
     worker.terminate().then(() => process.exit(failed ? 1 : 0));
   }
 });

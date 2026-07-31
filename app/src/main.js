@@ -290,14 +290,39 @@ function registerIpc() {
   });
 
   ipcMain.handle('job:svc', (event, options) => {
-    const { sourcePath, referencePath, diffusionSteps, pitchShift, cfgRate } = options;
+    const {
+      sourcePath,
+      referencePath,
+      diffusionSteps,
+      pitchShift,
+      cfgRate,
+      inputGainDb,
+      resynthWithExplicitF0,
+    } = options;
+    if (!Number.isFinite(inputGainDb) || inputGainDb < -12 || inputGainDb > 3) {
+      throw new RangeError('Input gain 必须在 -12 dB 到 +3 dB 之间');
+    }
+    if (!Number.isInteger(inputGainDb * 2)) {
+      throw new RangeError('Input gain 必须使用 0.5 dB 步长');
+    }
+    if (typeof resynthWithExplicitF0 !== 'boolean') {
+      throw new TypeError('resynth w/ explicit f0 必须是 boolean');
+    }
     const jobId = `svc-${++jobCounter}`;
     const groupDir = createOutputGroup(
       'svc',
       path.basename(sourcePath),
-      { diffusionSteps, pitchShift, cfgRate, reference: path.basename(referencePath) },
+      {
+        diffusionSteps,
+        pitchShift,
+        cfgRate,
+        inputGainDb,
+        resynthWithExplicitF0,
+        reference: path.basename(referencePath),
+      },
       [stemOf(sourcePath), 'to', stemOf(referencePath)]
     );
+    const outputStem = `${stemOf(sourcePath)}_to_${stemOf(referencePath)}`;
     ensureWorker().postMessage({
       type: 'run-svc',
       jobId,
@@ -307,7 +332,10 @@ function registerIpc() {
       diffusionSteps,
       pitchShift,
       cfgRate,
-      output: path.join(groupDir, `${stemOf(sourcePath)}_to_${stemOf(referencePath)}.wav`),
+      inputGainDb,
+      resynthWithExplicitF0,
+      output: path.join(groupDir, `${outputStem}.wav`),
+      reF0Output: path.join(groupDir, `${outputStem}_re_f0.wav`),
     });
     return { jobId };
   });

@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require('ele
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { spawn } = require('child_process');
 const { Worker } = require('worker_threads');
+const ffmpegStatic = require('ffmpeg-static');
 
 app.setName('AudioKit');
 app.setAboutPanelOptions({ applicationName: 'AudioKit' });
@@ -19,10 +21,14 @@ const AUDIO_EXTENSIONS = new Set([
   '.mp4',
   '.opus',
 ]);
+const VIDEO_EXTENSIONS = new Set(['.mp4']);
 
 const resourcesRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
 const modelsDir = path.join(resourcesRoot, 'Models');
 const nativeLibPath = path.join(resourcesRoot, 'native', 'libaudiokit_native.dylib');
+const ffmpegPath = app.isPackaged
+  ? ffmpegStatic.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+  : ffmpegStatic;
 
 const userDataDir = app.getPath('userData');
 const timbreDir = path.join(userDataDir, 'audio', 'timbre');
@@ -85,6 +91,14 @@ function isAudioFile(filePath) {
   return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+function isVideoFile(filePath) {
+  return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function isOutputMediaFile(filePath) {
+  return isAudioFile(filePath) || isVideoFile(filePath);
+}
+
 function timestamp() {
   const now = new Date();
   const pad = (value) => String(value).padStart(2, '0');
@@ -115,6 +129,7 @@ function audioFileInfo(filePath) {
     path: filePath,
     size: stat.size,
     mtime: stat.mtimeMs,
+    kind: isVideoFile(filePath) ? 'video' : 'audio',
   };
 }
 
@@ -142,7 +157,7 @@ function listOutputs() {
     const files = fs
       .readdirSync(dir)
       .map((fileName) => path.join(dir, fileName))
-      .filter((filePath) => fs.statSync(filePath).isFile() && isAudioFile(filePath))
+      .filter((filePath) => fs.statSync(filePath).isFile() && isOutputMediaFile(filePath))
       .map(audioFileInfo)
       .sort((a, b) => a.name.localeCompare(b.name));
     groups.push({
@@ -183,10 +198,58 @@ function resolveDragFile(filePath) {
   if (!relativePath || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
     throw new Error(`拖拽文件不在输出目录中: ${resolvedFile}`);
   }
-  if (!fs.statSync(resolvedFile).isFile() || !isAudioFile(resolvedFile)) {
-    throw new Error(`拖拽目标不是音频文件: ${resolvedFile}`);
+  if (!fs.statSync(resolvedFile).isFile() || !isOutputMediaFile(resolvedFile)) {
+    throw new Error(`拖拽目标不是媒体文件: ${resolvedFile}`);
   }
   return resolvedFile;
+}
+
+function resolveVideoOutput(filePath) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || !isVideoFile(filePath)) {
+    throw new TypeError('视频输出路径必须是绝对 MP4 路径');
+  }
+  const resolvedOutputDir = fs.realpathSync(outputDir);
+  const resolvedParent = fs.realpathSync(path.dirname(filePath));
+  const relativeParent = path.relative(resolvedOutputDir, resolvedParent);
+  if (relativeParent.startsWith(`..${path.sep}`) || path.isAbsolute(relativeParent)) {
+    throw new Error(`视频输出路径不在输出目录中: ${filePath}`);
+  }
+  return path.join(resolvedParent, path.basename(filePath));
+}
+
+function transcodeVideo(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath, [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-n',
+      '-i',
+      inputPath,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      '18',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      '-an',
+      outputPath,
+    ]);
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.once('error', reject);
+    child.once('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg 转码失败 (${code}): ${stderr.trim()}`));
+    });
+  });
 }
 
 function registerIpc() {
@@ -266,6 +329,27 @@ function registerIpc() {
     return listOutputs();
   });
 
+  ipcMain.handle('video:write', async (_event, filePath, bytes) => {
+    if (!(bytes instanceof Uint8Array)) {
+      throw new TypeError('视频数据必须是 Uint8Array');
+    }
+    const outputPath = resolveVideoOutput(filePath);
+    if (fs.existsSync(outputPath)) throw new Error(`视频输出已存在: ${outputPath}`);
+    const intermediatePath = path.join(path.dirname(outputPath), '.mel-video.webm');
+    await fs.promises.writeFile(intermediatePath, bytes);
+    try {
+      await transcodeVideo(intermediatePath, outputPath);
+      const stat = await fs.promises.stat(outputPath);
+      if (stat.size === 0) throw new Error('FFmpeg 未产生有效 MP4 文件');
+    } catch (error) {
+      if (fs.existsSync(outputPath)) await fs.promises.unlink(outputPath);
+      throw error;
+    } finally {
+      await fs.promises.unlink(intermediatePath);
+    }
+    return audioFileInfo(outputPath);
+  });
+
   ipcMain.handle('file:reveal', (_event, filePath) => {
     shell.showItemInFolder(filePath);
   });
@@ -298,6 +382,8 @@ function registerIpc() {
       cfgRate,
       inputGainDb,
       resynthWithExplicitF0,
+      generateVideo,
+      videoDuration,
     } = options;
     if (!Number.isFinite(inputGainDb) || inputGainDb < -12 || inputGainDb > 3) {
       throw new RangeError('Input gain 必须在 -12 dB 到 +3 dB 之间');
@@ -307,6 +393,12 @@ function registerIpc() {
     }
     if (typeof resynthWithExplicitF0 !== 'boolean') {
       throw new TypeError('resynth w/ explicit f0 必须是 boolean');
+    }
+    if (typeof generateVideo !== 'boolean') {
+      throw new TypeError('generateVideo 必须是 boolean');
+    }
+    if (generateVideo && (!Number.isInteger(videoDuration) || videoDuration < 15 || videoDuration > 30)) {
+      throw new RangeError('视频时长必须是 15 到 30 秒之间的整数');
     }
     const jobId = `svc-${++jobCounter}`;
     const groupDir = createOutputGroup(
@@ -318,11 +410,14 @@ function registerIpc() {
         cfgRate,
         inputGainDb,
         resynthWithExplicitF0,
+        generateVideo,
+        videoDuration: generateVideo ? videoDuration : null,
         reference: path.basename(referencePath),
       },
       [stemOf(sourcePath), 'to', stemOf(referencePath)]
     );
     const outputStem = `${stemOf(sourcePath)}_to_${stemOf(referencePath)}`;
+    const videoOutput = path.join(groupDir, `${outputStem}_mel.mp4`);
     ensureWorker().postMessage({
       type: 'run-svc',
       jobId,
@@ -334,8 +429,12 @@ function registerIpc() {
       cfgRate,
       inputGainDb,
       resynthWithExplicitF0,
+      generateVideo,
+      videoDuration,
       output: path.join(groupDir, `${outputStem}.wav`),
       reF0Output: path.join(groupDir, `${outputStem}_re_f0.wav`),
+      videoMelOutput: path.join(groupDir, '.mel-video.akmv'),
+      videoOutput,
     });
     return { jobId };
   });
@@ -364,6 +463,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));

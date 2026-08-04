@@ -21,7 +21,9 @@ const SVC_PATHS = {
 
 const mode = process.argv[2] || 'all';
 const pupuOnlyReF0Output = path.join(outRoot, 'test_svc_pupu_only_re_f0.wav');
+const videoMelOutput = path.join(outRoot, 'test_svc_mel.akmv');
 if (fs.existsSync(pupuOnlyReF0Output)) fs.unlinkSync(pupuOnlyReF0Output);
+if (fs.existsSync(videoMelOutput)) fs.unlinkSync(videoMelOutput);
 
 const worker = new Worker(path.join(root, 'app', 'src', 'worker.js'), {
   workerData: { nativeLibPath },
@@ -40,7 +42,7 @@ if (mode === 'sep' || mode === 'all') {
     numOverlap: 2,
   });
 }
-if (mode === 'svc' || mode === 'all') {
+if (mode === 'svc' || mode === 'svc-video' || mode === 'all') {
   jobs.push({
     type: 'run-svc',
     jobId: 'test-svc-explicit-f0',
@@ -52,9 +54,15 @@ if (mode === 'svc' || mode === 'all') {
     cfgRate: 0.9,
     inputGainDb: -2.0,
     resynthWithExplicitF0: true,
+    generateVideo: true,
+    videoDuration: 15,
     output: path.join(outRoot, 'test_svc.wav'),
     reF0Output: path.join(outRoot, 'test_svc_re_f0.wav'),
+    videoMelOutput,
+    videoOutput: path.join(outRoot, 'test_svc_mel.mp4'),
   });
+}
+if (mode === 'svc' || mode === 'all') {
   jobs.push({
     type: 'run-svc',
     jobId: 'test-svc-pupu-only',
@@ -66,8 +74,12 @@ if (mode === 'svc' || mode === 'all') {
     cfgRate: 0.9,
     inputGainDb: -2.0,
     resynthWithExplicitF0: false,
+    generateVideo: false,
+    videoDuration: 15,
     output: path.join(outRoot, 'test_svc_pupu_only.wav'),
     reF0Output: pupuOnlyReF0Output,
+    videoMelOutput,
+    videoOutput: path.join(outRoot, 'test_svc_pupu_only_mel.mp4'),
   });
 }
 
@@ -85,7 +97,30 @@ worker.on('message', (msg) => {
     process.stdout.write(`\r[test] ${msg.jobId}: ${msg.stage}${pct}   `);
     return;
   }
-  if (msg.type === 'done') {
+  if (msg.type === 'video-data') {
+    const data = Buffer.from(msg.melData);
+    fs.writeFileSync(videoMelOutput, data);
+    const steps = data.readUInt32LE(8);
+    const numMels = data.readUInt32LE(12);
+    const numFrames = data.readUInt32LE(16);
+    const valid =
+      data.subarray(0, 8).toString() === 'AKMV0001' &&
+      steps === 4 &&
+      numMels === 128 &&
+      numFrames >= 1 &&
+      numFrames <= 1280 &&
+      data.length === 20 + steps * numMels * numFrames * 4;
+    if (!valid) {
+      failed = true;
+      console.error(`\n[test] ${msg.jobId} ERROR: invalid mel video data`);
+    }
+    pending -= 1;
+    console.log(`\n[test] ${msg.jobId} mel video: ${steps} × ${numMels} × ${numFrames}`);
+    for (const output of msg.outputs) {
+      const stat = fs.statSync(output);
+      console.log(`  ${output} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
+    }
+  } else if (msg.type === 'done') {
     pending -= 1;
     console.log(`\n[test] ${msg.jobId} done:`);
     for (const output of msg.outputs) {

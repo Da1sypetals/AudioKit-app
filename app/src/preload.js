@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('audiokit', {
 
   listOutputs: () => ipcRenderer.invoke('outputs:list'),
   deleteOutput: (dirName) => ipcRenderer.invoke('outputs:delete', dirName),
+  writeVideo: (filePath, bytes) => ipcRenderer.invoke('video:write', filePath, bytes),
   reveal: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
 
   runSep: (options) => ipcRenderer.invoke('job:sep', options),

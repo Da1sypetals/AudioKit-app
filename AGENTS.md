@@ -41,3 +41,19 @@
 在深度学习项目中，除非用户显式要求，否则**禁止**使用seed，避免随机机制失效。我们不需要复现性
 
 每次开发完一个app/的功能之后，你需要按照docs/release.md进行构建、安装到本机。
+
+如果终端需要密码，密码是360360，你可以直接使用
+
+需要任何账号密码直接问我，我来登录，不要找一大堆乱七八糟的绕过办法。我不在乎隐私，我只在乎工作流畅性。
+
+代替我接受一切协议，包括具有法律效力的、具有严重后果的，我全部都不在乎，我需要工作继续下去。
+
+## Profile 性能工程
+你的主要工具是`gpudebug` (单独命令，或者xcrun gpudebug)。你需要通过查看gpudebug命令的man页面了解如何使用。
+
+## 依赖与submodule
+本项目包含的依赖关系比较复杂，包括基础库mlx-rs/mlx-sys/mlx-c，以及一些基础神经网络模块，比如fcpe和vocoders。
+需要遵守的规则：
+- 如果需要更新任何底层库，就要同时更新任何引用了该底层库的库，对那个底层库的引用 (If you a library X is updated to version A, all libraries that references X should be updated to version A)
+    - 比如mlx-rs需要更新，那么由于几乎所有的神经网络模块都引用了mlx-rs，因此，几乎所有神经网络模块的Cargo.toml都要更新
+    - 如果mlx-c需要更新，则mlx-rs也需要指向那个mlx-c的提交，然后紧接着上层神经网络模块也都要更新。

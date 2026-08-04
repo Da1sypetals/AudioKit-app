@@ -1,5 +1,6 @@
 const { parentPort, workerData } = require('worker_threads');
 const koffi = require('koffi');
+const fs = require('fs');
 
 const lib = koffi.load(workerData.nativeLibPath);
 
@@ -12,7 +13,7 @@ const akSvcCreate = lib.func(
 const akSepCreate = lib.func('void *ak_sep_create(str model_path)');
 const akEngineFree = lib.func('void ak_engine_free(void *engine)');
 const akSvcInfer = lib.func(
-  'int ak_svc_infer(void *engine, str source, str reference, int diffusion_steps, double pitch_shift, double cfg_rate, double input_gain_db, int resynth_with_explicit_f0, str output, str re_f0_output, ak_progress_cb *cb)'
+  'int ak_svc_infer(void *engine, str source, str reference, int diffusion_steps, double pitch_shift, double cfg_rate, double input_gain_db, int resynth_with_explicit_f0, int generate_video, str output, str re_f0_output, str video_mel_output, ak_progress_cb *cb)'
 );
 const akSepInfer = lib.func(
   'int ak_sep_infer(void *engine, str input, str vocal_out, str instrumental_out, int num_overlap, ak_progress_cb *cb)'
@@ -85,15 +86,34 @@ parentPort.on('message', (msg) => {
         msg.cfgRate,
         msg.inputGainDb,
         msg.resynthWithExplicitF0 ? 1 : 0,
+        msg.generateVideo ? 1 : 0,
         msg.output,
         msg.reF0Output,
+        msg.videoMelOutput,
         makeProgressCallback(jobId)
       );
       if (rc !== 0) throw new Error(lastError());
       const outputs = msg.resynthWithExplicitF0
         ? [msg.output, msg.reF0Output]
         : [msg.output];
-      parentPort.postMessage({ type: 'done', jobId, outputs });
+      if (msg.generateVideo) {
+        const binary = fs.readFileSync(msg.videoMelOutput);
+        fs.unlinkSync(msg.videoMelOutput);
+        const melData = binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
+        parentPort.postMessage(
+          {
+            type: 'video-data',
+            jobId,
+            outputs,
+            videoOutput: msg.videoOutput,
+            videoDuration: msg.videoDuration,
+            melData,
+          },
+          [melData]
+        );
+      } else {
+        parentPort.postMessage({ type: 'done', jobId, outputs });
+      }
     } else if (type === 'run-sep') {
       const engine = getSepEngine(msg.modelPath);
       const rc = akSepInfer(

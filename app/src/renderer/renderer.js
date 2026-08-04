@@ -21,6 +21,7 @@ const state = {
     cfgRate: 0.9,
     inputGainDb: -2,
     resynthWithExplicitF0: true,
+    videoDuration: 20,
   },
   timbres: [],
   inputs: [],
@@ -72,10 +73,186 @@ const STAGE_LABELS = {
   diffusion: '扩散采样',
   separate: '分离推理',
   'write output': '写出音频',
+  'render video': '生成频谱视频',
 };
 
 function stageLabel(stage) {
   return STAGE_LABELS[stage] || stage;
+}
+
+function parseMelVideo(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const magic = new TextDecoder().decode(bytes.subarray(0, 8));
+  if (magic !== 'AKMV0001') throw new Error('mel 视频数据格式无效');
+  const header = new DataView(buffer, 8, 12);
+  const steps = header.getUint32(0, true);
+  const numMels = header.getUint32(4, true);
+  const numFrames = header.getUint32(8, true);
+  if (steps < 1 || numMels < 1 || numFrames < 1) {
+    throw new Error('mel 视频维度无效');
+  }
+  const expectedBytes = 20 + steps * numMels * numFrames * Float32Array.BYTES_PER_ELEMENT;
+  if (buffer.byteLength !== expectedBytes) throw new Error('mel 视频数据长度不匹配');
+  return {
+    steps,
+    numMels,
+    numFrames,
+    values: new Float32Array(buffer, 20),
+  };
+}
+
+function makeMelPalette() {
+  const stops = [
+    [0.0, [8, 7, 24]],
+    [0.22, [69, 18, 111]],
+    [0.48, [169, 48, 126]],
+    [0.74, [244, 114, 92]],
+    [1.0, [252, 253, 191]],
+  ];
+  return Array.from({ length: 256 }, (_, index) => {
+    const value = index / 255;
+    const rightIndex = stops.findIndex(([position]) => position >= value);
+    const right = stops[Math.max(1, rightIndex)];
+    const left = stops[Math.max(0, rightIndex - 1)];
+    const fraction = (value - left[0]) / (right[0] - left[0]);
+    return left[1].map((channel, channelIndex) =>
+      Math.round(channel + (right[1][channelIndex] - channel) * fraction)
+    );
+  });
+}
+
+function melValueRange(values) {
+  const stride = Math.max(1, Math.ceil(values.length / 200000));
+  const sampled = [];
+  for (let index = 0; index < values.length; index += stride) {
+    const value = values[index];
+    if (Number.isFinite(value)) sampled.push(value);
+  }
+  sampled.sort((a, b) => a - b);
+  if (sampled.length < 2) throw new Error('mel 视频缺少有效数据');
+  const low = sampled[Math.floor((sampled.length - 1) * 0.02)];
+  const high = sampled[Math.floor((sampled.length - 1) * 0.98)];
+  if (!(high > low)) throw new Error('mel 视频动态范围无效');
+  return { low, high };
+}
+
+function createMelStepCanvases(video) {
+  const palette = makeMelPalette();
+  const { low, high } = melValueRange(video.values);
+  const scale = 255 / (high - low);
+  const canvases = [];
+  for (let step = 0; step < video.steps; step += 1) {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.numFrames;
+    canvas.height = video.numMels;
+    const context = canvas.getContext('2d');
+    const pixels = context.createImageData(video.numFrames, video.numMels);
+    for (let mel = 0; mel < video.numMels; mel += 1) {
+      for (let frame = 0; frame < video.numFrames; frame += 1) {
+        const sourceIndex = (step * video.numMels + mel) * video.numFrames + frame;
+        const level = Math.max(0, Math.min(255, Math.round((video.values[sourceIndex] - low) * scale)));
+        const color = palette[level];
+        const targetIndex = ((video.numMels - mel - 1) * video.numFrames + frame) * 4;
+        pixels.data[targetIndex] = color[0];
+        pixels.data[targetIndex + 1] = color[1];
+        pixels.data[targetIndex + 2] = color[2];
+        pixels.data[targetIndex + 3] = 255;
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+    canvases.push(canvas);
+  }
+  return canvases;
+}
+
+function drawMelVideoFrame(context, stepCanvases, progress) {
+  const width = context.canvas.width;
+  const height = context.canvas.height;
+  const plot = { x: 58, y: 82, width: width - 92, height: height - 144 };
+  const stepPosition = progress * stepCanvases.length;
+  const stepIndex = Math.min(stepCanvases.length - 1, Math.floor(stepPosition));
+  const fade = stepPosition >= stepCanvases.length ? 1 : stepPosition - stepIndex;
+
+  context.fillStyle = '#080a12';
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = '#111525';
+  context.fillRect(plot.x, plot.y, plot.width, plot.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  if (stepIndex > 0) {
+    context.globalAlpha = 1;
+    context.drawImage(stepCanvases[stepIndex - 1], plot.x, plot.y, plot.width, plot.height);
+  }
+  context.globalAlpha = fade;
+  context.drawImage(stepCanvases[stepIndex], plot.x, plot.y, plot.width, plot.height);
+  context.globalAlpha = 1;
+
+  context.strokeStyle = '#3b4255';
+  context.lineWidth = 1;
+  context.strokeRect(plot.x + 0.5, plot.y + 0.5, plot.width - 1, plot.height - 1);
+  context.fillStyle = '#f0f3f7';
+  context.font = '600 24px -apple-system, BlinkMacSystemFont, sans-serif';
+  context.fillText('YingMusic · MEL SPECTROGRAM', plot.x, 44);
+  context.fillStyle = '#9ba7ba';
+  context.font = '15px -apple-system, BlinkMacSystemFont, sans-serif';
+  context.fillText(`Integration ${stepIndex + 1} / ${stepCanvases.length}`, plot.x, 67);
+  context.fillText('LOW', 17, plot.y + plot.height - 3);
+  context.fillText('HIGH', 12, plot.y + 14);
+  context.fillText('FULL AUDIO TIMELINE', plot.x, height - 28);
+  context.textAlign = 'right';
+  context.fillText(`${Math.round(progress * 100)}%`, plot.x + plot.width, height - 28);
+  context.textAlign = 'left';
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function encodeMelVideo(buffer, durationSeconds, onProgress) {
+  const mimeType = 'video/webm;codecs=vp9';
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    throw new Error('当前环境不支持 VP9 WebM 编码');
+  }
+  const video = parseMelVideo(buffer);
+  const stepCanvases = createMelStepCanvases(video);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1280;
+  canvas.height = 720;
+  const context = canvas.getContext('2d');
+  const stream = canvas.captureStream(30);
+  const recorder = new MediaRecorder(stream, {
+    mimeType,
+    videoBitsPerSecond: 8000000,
+  });
+  const chunks = [];
+  recorder.addEventListener('dataavailable', (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  });
+  const stopped = new Promise((resolve, reject) => {
+    recorder.addEventListener('stop', resolve, { once: true });
+    recorder.addEventListener('error', (event) => reject(event.error), { once: true });
+  });
+
+  const frameRate = 30;
+  const totalFrames = durationSeconds * frameRate;
+  recorder.start();
+  const startedAt = performance.now();
+  try {
+    for (let frame = 0; frame < totalFrames; frame += 1) {
+      const progress = totalFrames === 1 ? 1 : frame / (totalFrames - 1);
+      drawMelVideoFrame(context, stepCanvases, progress);
+      onProgress((frame + 1) / totalFrames);
+      const targetTime = startedAt + ((frame + 1) * 1000) / frameRate;
+      await delay(Math.max(0, targetTime - performance.now()));
+    }
+    recorder.stop();
+    await stopped;
+  } finally {
+    for (const track of stream.getTracks()) track.stop();
+  }
+  const output = new Blob(chunks, { type: mimeType });
+  if (output.size === 0) throw new Error('视频编码器未产生有效数据');
+  return output;
 }
 
 /* ---------------- rendering ---------------- */
@@ -314,15 +491,22 @@ function renderOutputs() {
         const row = document.createElement('div');
         row.className = 'output-file';
         row.draggable = true;
-        row.title = `${file.path}\n可拖出到 Logic Pro 等宿主软件`;
+        row.title = `${file.path}\n可拖出到其他应用`;
 
         const active = playbackPath === file.path;
-        const playBtn = document.createElement('button');
-        playBtn.className = 'play-btn';
-        playBtn.innerHTML = active && isPlaying ? ICONS.pause : ICONS.play;
-        playBtn.title = active && isPlaying ? '暂停' : '播放';
-        playBtn.addEventListener('click', () => playOrPause(file.path));
-        row.appendChild(playBtn);
+        if (file.kind === 'audio') {
+          const playBtn = document.createElement('button');
+          playBtn.className = 'play-btn';
+          playBtn.innerHTML = active && isPlaying ? ICONS.pause : ICONS.play;
+          playBtn.title = active && isPlaying ? '暂停' : '播放';
+          playBtn.addEventListener('click', () => playOrPause(file.path));
+          row.appendChild(playBtn);
+        } else {
+          const kind = document.createElement('span');
+          kind.className = 'media-kind';
+          kind.textContent = 'MP4';
+          row.appendChild(kind);
+        }
 
         const fileName = document.createElement('span');
         fileName.className = 'file-name';
@@ -349,7 +533,7 @@ function renderOutputs() {
 
         entry.appendChild(row);
 
-        if (active) {
+        if (active && file.kind === 'audio') {
           const strip = document.createElement('div');
           strip.className = 'playback';
           const track = document.createElement('div');
@@ -375,6 +559,7 @@ function renderOutputs() {
 function updateRunButtons() {
   $('sep-run').disabled = state.running || !state.sep.input;
   $('svc-run').disabled = state.running || !state.svc.source || !state.svc.reference;
+  $('svc-run-video').disabled = state.running || !state.svc.source || !state.svc.reference;
 }
 
 /* ---------------- timbre rename ---------------- */
@@ -554,6 +739,13 @@ function setupParams() {
     (v) => (state.svc.inputGainDb = v),
     formatDb
   );
+  bind(
+    'svc-video-duration',
+    'svc-video-duration-value',
+    () => state.svc.videoDuration,
+    (v) => (state.svc.videoDuration = v),
+    (v) => `${v} 秒`
+  );
 
   $('svc-pitch-plus12').addEventListener('click', () => setPitch(12));
   $('svc-pitch-minus12').addEventListener('click', () => setPitch(-12));
@@ -582,7 +774,7 @@ function setupJobs() {
     }
   });
 
-  $('svc-run').addEventListener('click', async () => {
+  const startSvc = async (generateVideo) => {
     if (!state.svc.source || !state.svc.reference) return;
     state.running = true;
     updateRunButtons();
@@ -596,13 +788,18 @@ function setupJobs() {
         cfgRate: state.svc.cfgRate,
         inputGainDb: state.svc.inputGainDb,
         resynthWithExplicitF0: state.svc.resynthWithExplicitF0,
+        generateVideo,
+        videoDuration: state.svc.videoDuration,
       });
     } catch (error) {
       state.running = false;
       updateRunButtons();
       setStatus(`启动失败: ${error.message}`, true);
     }
-  });
+  };
+
+  $('svc-run').addEventListener('click', () => startSvc(false));
+  $('svc-run-video').addEventListener('click', () => startSvc(true));
 
   api.onJobEvent(async (msg) => {
     if (msg.type === 'progress') {
@@ -613,6 +810,30 @@ function setupJobs() {
       } else {
         setStatus(label);
         setProgress(null);
+      }
+    } else if (msg.type === 'video-data') {
+      try {
+        setStatus('生成频谱视频 0%');
+        setProgress(0);
+        const video = await encodeMelVideo(msg.melData, msg.videoDuration, (fraction) => {
+          setStatus(`生成频谱视频 ${Math.round(fraction * 100)}%`);
+          setProgress(fraction);
+        });
+        const bytes = new Uint8Array(await video.arrayBuffer());
+        await api.writeVideo(msg.videoOutput, bytes);
+        state.running = false;
+        updateRunButtons();
+        setProgress(null);
+        setStatus('完成');
+        state.outputs = await api.listOutputs();
+        renderOutputs();
+      } catch (error) {
+        state.running = false;
+        updateRunButtons();
+        setProgress(null);
+        setStatus(`视频生成失败: ${error.message}`, true);
+        state.outputs = await api.listOutputs();
+        renderOutputs();
       }
     } else if (msg.type === 'done') {
       state.running = false;

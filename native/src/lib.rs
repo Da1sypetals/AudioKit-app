@@ -4,10 +4,12 @@ use anyhow::{Context, Result, ensure};
 use separation::Separator;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char, c_double, c_int};
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::ptr;
-use yingmusic::{InferParams, Progress, YingMusicSvc, YingMusicSvcPaths};
+use yingmusic::{InferParams, MelVideo, Progress, YingMusicSvc, YingMusicSvcPaths};
 
 pub enum Engine {
     Svc(Box<YingMusicSvc>),
@@ -65,6 +67,27 @@ fn progress_trampoline(callback: Option<AkProgressCallback>) -> impl FnMut(&str,
             callback(stage.as_ptr(), fraction);
         }
     }
+}
+
+fn write_mel_video(path: &Path, video: &MelVideo) -> Result<()> {
+    ensure!(
+        video.values.len() == video.steps * video.num_mels * video.num_frames,
+        "mel video data length mismatch"
+    );
+    let steps = u32::try_from(video.steps).context("mel video has too many steps")?;
+    let num_mels = u32::try_from(video.num_mels).context("mel video has too many mel bins")?;
+    let num_frames =
+        u32::try_from(video.num_frames).context("mel video has too many timeline frames")?;
+    let mut output = BufWriter::new(File::create(path)?);
+    output.write_all(b"AKMV0001")?;
+    output.write_all(&steps.to_le_bytes())?;
+    output.write_all(&num_mels.to_le_bytes())?;
+    output.write_all(&num_frames.to_le_bytes())?;
+    for value in &video.values {
+        output.write_all(&value.to_le_bytes())?;
+    }
+    output.flush()?;
+    Ok(())
 }
 
 #[unsafe(no_mangle)]
@@ -125,8 +148,10 @@ pub unsafe extern "C" fn ak_svc_infer(
     cfg_rate: c_double,
     input_gain_db: c_double,
     resynth_with_explicit_f0: c_int,
+    generate_video: c_int,
     output: *const c_char,
     re_f0_output: *const c_char,
+    video_mel_output: *const c_char,
     on_progress: Option<AkProgressCallback>,
 ) -> c_int {
     let result = run_ffi("ak_svc_infer", || {
@@ -136,6 +161,10 @@ pub unsafe extern "C" fn ak_svc_infer(
             matches!(resynth_with_explicit_f0, 0 | 1),
             "resynth_with_explicit_f0 must be 0 or 1"
         );
+        ensure!(
+            matches!(generate_video, 0 | 1),
+            "generate_video must be 0 or 1"
+        );
         let engine = unsafe { &mut *engine };
         let Engine::Svc(svc) = engine else {
             anyhow::bail!("engine handle is not an SVC engine");
@@ -144,8 +173,14 @@ pub unsafe extern "C" fn ak_svc_infer(
         let reference = read_cstr(reference)?;
         let output = read_cstr(output)?;
         let resynth_with_explicit_f0 = resynth_with_explicit_f0 == 1;
+        let generate_video = generate_video == 1;
         let re_f0_output = if resynth_with_explicit_f0 {
             Some(read_cstr(re_f0_output)?)
+        } else {
+            None
+        };
+        let video_mel_output = if generate_video {
+            Some(read_cstr(video_mel_output)?)
         } else {
             None
         };
@@ -155,9 +190,10 @@ pub unsafe extern "C" fn ak_svc_infer(
             cfg_rate: cfg_rate as f32,
             input_gain_db: input_gain_db as f32,
             resynth_with_explicit_f0,
+            collect_video_mel: generate_video,
         };
         let mut report = progress_trampoline(on_progress);
-        svc.infer(
+        let inference = svc.infer(
             Path::new(&source),
             Path::new(&reference),
             &params,
@@ -170,6 +206,13 @@ pub unsafe extern "C" fn ak_svc_infer(
                 }
             }),
         )?;
+        if let Some(video_mel_output) = video_mel_output {
+            let mel_video = inference
+                .mel_video
+                .as_ref()
+                .context("inference did not return mel video data")?;
+            write_mel_video(Path::new(&video_mel_output), mel_video)?;
+        }
         Ok(())
     });
     if result.is_some() { 0 } else { -1 }

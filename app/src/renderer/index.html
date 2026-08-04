@@ -145,9 +145,22 @@
               <input type="checkbox" id="svc-resynth-f0" checked>
             </div>
           </div>
+          <div class="param">
+            <div class="param-label">
+              <span>视频时长</span>
+              <span class="param-hint">完整 mel spectrogram 动画时长；每个积分步占总时长的等分</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="svc-video-duration" min="15" max="30" step="1" value="20">
+              <span class="param-value" id="svc-video-duration-value">20 秒</span>
+            </div>
+          </div>
         </div>
 
-        <button class="primary-btn" id="svc-run">开始转换</button>
+        <div class="run-actions">
+          <button class="primary-btn" id="svc-run">开始转换</button>
+          <button class="primary-btn" id="svc-run-video">转换并生成视频</button>
+        </div>
 
         <div class="section-title">输出</div>
         <div class="outputs" id="svc-outputs"></div>

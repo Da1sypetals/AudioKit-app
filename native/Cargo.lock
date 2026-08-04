@@ -1350,6 +1350,7 @@ dependencies = [
  "anyhow",
  "hound",
  "mlx-rs",
+ "mlx-sys",
  "soxr",
 ]
 

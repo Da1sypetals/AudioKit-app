@@ -73,10 +73,23 @@ const STAGE_LABELS = {
   diffusion: '扩散采样',
   separate: '分离推理',
   'write output': '写出音频',
+  'pupu vocoder': 'Pupu Vocoder',
+  'pc-nsf-hifigan': 'PC-NSF-HiFiGAN',
+  'collect video mel': '收集视频 Mel',
+  'stitch audio': '拼接音频',
+  'assemble video mel': '整理视频 Mel',
+  'write pupu output': '写出 Pupu 音频',
+  'write re-f0 output': '写出 re_f0 音频',
+  'write video mel': '写出视频 Mel',
   'render video': '生成频谱视频',
 };
 
 function stageLabel(stage) {
+  const chunkStage = stage.match(/^(.+):(\d+)\/(\d+)$/);
+  if (chunkStage) {
+    const [, name, chunk, total] = chunkStage;
+    return `${STAGE_LABELS[name] || name} · 分段 ${chunk}/${total}`;
+  }
   return STAGE_LABELS[stage] || stage;
 }
 
@@ -275,6 +288,16 @@ function renderFileList(element, files, { selectedPath, onSelect, onDelete, empt
     name.textContent = file.name;
     name.title = file.path + itemTitleSuffix;
     li.appendChild(name);
+
+    const reveal = document.createElement('button');
+    reveal.className = 'row-action';
+    reveal.innerHTML = ICONS.folder;
+    reveal.title = '在 Finder 中显示';
+    reveal.addEventListener('click', (event) => {
+      event.stopPropagation();
+      api.reveal(file.path);
+    });
+    li.appendChild(reveal);
 
     const del = document.createElement('button');
     del.className = 'row-action danger';

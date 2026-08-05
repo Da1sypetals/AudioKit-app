@@ -204,9 +204,14 @@ pub unsafe extern "C" fn ak_svc_infer(
                 Progress::Diffusion { done, total } => {
                     report("diffusion", done as f64 / total as f64)
                 }
+                Progress::ChunkStage { name, chunk, total } => {
+                    let stage = format!("{name}:{chunk}/{total}");
+                    report(&stage, -1.0);
+                }
             }),
         )?;
         if let Some(video_mel_output) = video_mel_output {
+            report("write video mel", -1.0);
             let mel_video = inference
                 .mel_video
                 .as_ref()

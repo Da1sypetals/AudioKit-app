@@ -451,6 +451,39 @@ body {
   gap: 8px;
 }
 
+.more-actions-title {
+  border-bottom: none;
+  cursor: pointer;
+  list-style: none;
+}
+
+.more-actions-title::-webkit-details-marker {
+  display: none;
+}
+
+.more-actions-title::before {
+  content: "▶ ";
+}
+
+.more-actions[open] .more-actions-title::before {
+  content: "▼ ";
+}
+
+.more-actions-title:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.more-actions-content {
+  margin: 4px 0 0 6px;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--border);
+}
+
+.more-actions-content .primary-btn {
+  margin-top: 8px;
+}
+
 /* ---------------- outputs ---------------- */
 .outputs {
   display: flex;

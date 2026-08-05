@@ -19,7 +19,7 @@ xcrun gpudebug --version
 xcrun --find gpucapture
 ```
 
-你需要通过 `xcrun` 解析当前选中 Xcode 内的工具。禁止根据 PATH 中同名程序推断当前工具链。你还需要读取当前 SDK 的 Metal headers。通过 `xcrun --show-sdk-path` 取得 SDK 根目录，再读取 `System/Library/Frameworks/Metal.framework/Headers/` 下与 capture、command buffer、compute pipeline、resource、counter 相关的声明和注释。API 可用性以当前 SDK headers 为准。
+你需要通过 `xcrun` 解析当前选中 Xcode 内的工具。
 
 ## GPU capture 与 gpudebug
 
@@ -32,7 +32,7 @@ man gpucapture
 
 你的主要优化依据是`gpudebug`这个CLI工具，你必须遵循Profile-guided Opimization对程序进行性能分析和性能优化。
 
-必须使用 `gpudebug <command> ?` 阅读准备调用的每个子命令的上下文帮助。包括但不限于 `list`、`go`、`info`、`fetch`、`find`、`profile`、`wait`、`status`。参数、对象层级、会话生命周期和 JSON 输出格式以本机help文档为准。
+你可以通过 `gpudebug <command> ?` 阅读准备调用的每个子命令的上下文帮助。包括但不限于 `list`、`go`、`info`、`fetch`、`find`、`profile`、`wait`、`status`。参数、对象层级、会话生命周期和 JSON 输出格式以本机help文档为准。
 
 可以参考 Apple 官方文档：
 - [Investigating GPU issues with AI agents](https://developer.apple.com/documentation/xcode/investigating-gpu-issues-with-ai-agents)
@@ -47,4 +47,6 @@ man gpucapture
 
 ## Benchmark 与正确性
 
-在优化的过程中，你需要确保程序的运行结果和优化前保持一致，数值误差应当在浮点数运算顺序误差的可接受范围之内。你需要用（最大绝对误差、平均绝对误差）来衡量程序的正确性。
+- 在优化的过程中，你需要确保程序的运行结果和优化前保持一致，数值误差应当在浮点数运算顺序误差的可接受范围之内。
+- 你需要用（最大绝对误差、平均绝对误差）来衡量程序的正确性。
+- 若非显式要求，禁止使用quantization量化技术，这会改变数值精度，对模型效果有不可预知的影响。

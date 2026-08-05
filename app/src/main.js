@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
@@ -127,6 +128,7 @@ function audioFileInfo(filePath) {
   return {
     name: path.basename(filePath),
     path: filePath,
+    url: pathToFileURL(filePath).href,
     size: stat.size,
     mtime: stat.mtimeMs,
     kind: isVideoFile(filePath) ? 'video' : 'audio',

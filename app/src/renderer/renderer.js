@@ -365,11 +365,18 @@ function updateInputDisplays() {
   setInputDisplay('svc-reference-name', state.svc.reference, '未选择 — 从左侧音色库选择');
 }
 
-function onTimeUpdate() {
-  if (!audioPlayer || !audioPlayer.duration || seeking) return;
-  playbackProgress = audioPlayer.currentTime / audioPlayer.duration;
+function updatePlaybackProgress() {
   const fill = document.getElementById('playback-fill');
   if (fill) fill.style.width = `${playbackProgress * 100}%`;
+  const track = document.querySelector('.playback-track');
+  if (track) track.setAttribute('aria-valuenow', String(Math.round(playbackProgress * 100)));
+}
+
+function onTimeUpdate(event) {
+  const player = event.currentTarget;
+  if (player !== audioPlayer || !player.duration || seeking) return;
+  playbackProgress = player.currentTime / player.duration;
+  updatePlaybackProgress();
 }
 
 function seekTo(clientX, track) {
@@ -377,8 +384,7 @@ function seekTo(clientX, track) {
   const rect = track.getBoundingClientRect();
   const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   playbackProgress = fraction;
-  const fill = document.getElementById('playback-fill');
-  if (fill) fill.style.width = `${fraction * 100}%`;
+  updatePlaybackProgress();
   audioPlayer.currentTime = fraction * audioPlayer.duration;
 }
 
@@ -402,33 +408,71 @@ function setupSeekGlobal() {
   });
 }
 
-function onEnded() {
-  isPlaying = false;
-  playbackProgress = 0;
-  audioPlayer.currentTime = 0;
+function onPlaying(event) {
+  if (event.currentTarget !== audioPlayer) return;
+  isPlaying = true;
   renderOutputs();
 }
 
-function playOrPause(filePath) {
+function onPause(event) {
+  if (event.currentTarget !== audioPlayer || event.currentTarget.ended) return;
+  isPlaying = false;
+  renderOutputs();
+}
+
+function onEnded(event) {
+  const player = event.currentTarget;
+  if (player !== audioPlayer) return;
+  isPlaying = false;
+  playbackProgress = 0;
+  player.currentTime = 0;
+  renderOutputs();
+}
+
+function onPlaybackError(player, filePath, error) {
+  if (player !== audioPlayer) return;
+  player.pause();
+  audioPlayer = null;
+  playbackPath = null;
+  isPlaying = false;
+  playbackProgress = 0;
+  const fileName = filePath.split('/').pop();
+  setStatus(`音频播放失败: ${fileName} — ${error?.message || '无法加载音频'}`, true);
+  renderOutputs();
+}
+
+async function startPlayback(player, filePath) {
+  try {
+    await player.play();
+  } catch (error) {
+    onPlaybackError(player, filePath, error);
+  }
+}
+
+function playOrPause(file) {
+  const filePath = file.path;
   if (playbackPath === filePath && audioPlayer) {
     if (audioPlayer.paused) {
-      audioPlayer.play();
-      isPlaying = true;
+      void startPlayback(audioPlayer, filePath);
     } else {
       audioPlayer.pause();
-      isPlaying = false;
     }
-  } else {
-    if (audioPlayer) audioPlayer.pause();
-    playbackPath = filePath;
-    playbackProgress = 0;
-    audioPlayer = new Audio(`file://${filePath}`);
-    audioPlayer.addEventListener('timeupdate', onTimeUpdate);
-    audioPlayer.addEventListener('ended', onEnded);
-    audioPlayer.play();
-    isPlaying = true;
+    return;
   }
+
+  if (audioPlayer) audioPlayer.pause();
+  playbackPath = filePath;
+  playbackProgress = 0;
+  isPlaying = false;
+  const player = new Audio(file.url);
+  audioPlayer = player;
+  player.addEventListener('timeupdate', onTimeUpdate);
+  player.addEventListener('playing', onPlaying);
+  player.addEventListener('pause', onPause);
+  player.addEventListener('ended', onEnded);
+  player.addEventListener('error', () => onPlaybackError(player, filePath, player.error));
   renderOutputs();
+  void startPlayback(player, filePath);
 }
 
 function renderOutputs() {
@@ -499,7 +543,7 @@ function renderOutputs() {
           playBtn.className = 'play-btn';
           playBtn.innerHTML = active && isPlaying ? ICONS.pause : ICONS.play;
           playBtn.title = active && isPlaying ? '暂停' : '播放';
-          playBtn.addEventListener('click', () => playOrPause(file.path));
+          playBtn.addEventListener('click', () => playOrPause(file));
           row.appendChild(playBtn);
         } else {
           const kind = document.createElement('span');
@@ -538,6 +582,11 @@ function renderOutputs() {
           strip.className = 'playback';
           const track = document.createElement('div');
           track.className = 'playback-track';
+          track.setAttribute('role', 'progressbar');
+          track.setAttribute('aria-label', `${file.name} 播放进度`);
+          track.setAttribute('aria-valuemin', '0');
+          track.setAttribute('aria-valuemax', '100');
+          track.setAttribute('aria-valuenow', String(Math.round(playbackProgress * 100)));
           const fill = document.createElement('div');
           fill.className = 'playback-fill';
           fill.id = 'playback-fill';

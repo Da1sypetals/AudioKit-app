@@ -6,7 +6,7 @@
 
 ## 本机工具链与设备
 
-开始任何 profile 前，必须读取并保存以下命令的输出。工具链、SDK、操作系统和芯片发生变化后必须重新读取。
+开始任何 profile 前，了解工具链、SDK、操作系统和芯片的信息：
 
 ```sh
 sw_vers
@@ -32,7 +32,7 @@ man gpudebug
 man gpucapture
 ```
 
-你的主要优化依据是`gpudebug`工具，你必须遵循Profile-guided Opimization对程序进行性能分析和性能优化。
+你的主要优化依据是`gpudebug`这个CLI工具，你必须遵循Profile-guided Opimization对程序进行性能分析和性能优化。
 
 必须使用 `gpudebug <command> ?` 阅读准备调用的每个子命令的上下文帮助。包括但不限于 `list`、`go`、`info`、`fetch`、`find`、`profile`、`wait`、`status`。参数、对象层级、会话生命周期和 JSON 输出格式以本机help文档为准。
 

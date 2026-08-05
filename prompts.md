@@ -39,3 +39,11 @@ melband-roformer-mlx: https://github.com/Da1sypetals/melband-roformer-mlx
 如何编译、构建、安装。对release文档进行trim，只保留人要做什么的流程。
 yingmusic-svc默认的音高应该是+12而不是0
 输出音频播放需要有一个进度条。旁边的按钮是播放和暂停，播放到结束之后，进度条自动归零，然后变成暂停状态
+
+---
+
+现在尝试对YingMusic-SVC的主模型进行优化。
+使用下列输入：
+音色输入：'/Users/daisy/Library/Application Support/AudioKit/audio/timbre/xiaoke.wav'
+内容输入：/Users/daisy/Library/Caches/AudioKit/input/鲸海驭风-female-2.wav
+使用docs/optimize-mlx.md文档里的工作流程进行优化，必须采取profile guided optimization，进行idefinite的优化loop

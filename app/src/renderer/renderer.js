@@ -9,6 +9,11 @@ const ICONS = {
   plus: '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>',
 };
 
+const VIDEO_WIDTH = 2560;
+const VIDEO_HEIGHT = 1440;
+const VIDEO_BIT_RATE = 24000000;
+const VIDEO_SAMPLING_MULTIPLIERS = [1, 2, 4, 8, 16, 32, 64, 128];
+
 const state = {
   view: 'separation',
   running: false,
@@ -16,12 +21,14 @@ const state = {
   svc: {
     source: null,
     reference: null,
+    f0Estimator: 'rmvpe',
     steps: 16,
     pitchShift: 12,
     cfgRate: 0.9,
     inputGainDb: -2,
-    resynthWithExplicitF0: true,
+    keepFirstVocoderOutput: false,
     videoDuration: 20,
+    videoSamplingMultiplier: 32,
   },
   timbres: [],
   inputs: [],
@@ -78,8 +85,7 @@ const STAGE_LABELS = {
   'collect video mel': '收集视频 Mel',
   'stitch audio': '拼接音频',
   'assemble video mel': '整理视频 Mel',
-  'write pupu output': '写出 Pupu 音频',
-  'write re-f0 output': '写出 re_f0 音频',
+  'write first vocoder output': '保存首个 Vocoder 输出',
   'write video mel': '写出视频 Mel',
   'render video': '生成频谱视频',
 };
@@ -116,11 +122,11 @@ function parseMelVideo(buffer) {
 
 function makeMelPalette() {
   const stops = [
-    [0.0, [8, 7, 24]],
-    [0.22, [69, 18, 111]],
-    [0.48, [169, 48, 126]],
-    [0.74, [244, 114, 92]],
-    [1.0, [252, 253, 191]],
+    [0.0, [1, 8, 4]],
+    [0.22, [3, 31, 15]],
+    [0.5, [8, 92, 42]],
+    [0.76, [34, 190, 83]],
+    [1.0, [194, 255, 211]],
   ];
   return Array.from({ length: 256 }, (_, index) => {
     const value = index / 255;
@@ -149,93 +155,142 @@ function melValueRange(values) {
   return { low, high };
 }
 
-function createMelStepCanvases(video) {
+function createMelVideoRenderer(video) {
   const palette = makeMelPalette();
   const { low, high } = melValueRange(video.values);
   const scale = 255 / (high - low);
-  const canvases = [];
-  for (let step = 0; step < video.steps; step += 1) {
-    const canvas = document.createElement('canvas');
-    canvas.width = video.numFrames;
-    canvas.height = video.numMels;
-    const context = canvas.getContext('2d');
-    const pixels = context.createImageData(video.numFrames, video.numMels);
-    for (let mel = 0; mel < video.numMels; mel += 1) {
-      for (let frame = 0; frame < video.numFrames; frame += 1) {
-        const sourceIndex = (step * video.numMels + mel) * video.numFrames + frame;
-        const level = Math.max(0, Math.min(255, Math.round((video.values[sourceIndex] - low) * scale)));
-        const color = palette[level];
-        const targetIndex = ((video.numMels - mel - 1) * video.numFrames + frame) * 4;
-        pixels.data[targetIndex] = color[0];
-        pixels.data[targetIndex + 1] = color[1];
-        pixels.data[targetIndex + 2] = color[2];
-        pixels.data[targetIndex + 3] = 255;
-      }
+  const planeSize = video.numMels * video.numFrames;
+  const intervalCount = video.steps - 1;
+  if (intervalCount < 1) throw new Error('mel 视频至少需要两个采样状态');
+
+  const intervalRms = new Float32Array(intervalCount);
+  const noiseFields = [];
+  for (let interval = 0; interval < intervalCount; interval += 1) {
+    const currentOffset = interval * planeSize;
+    const nextOffset = currentOffset + planeSize;
+    let squaredDifference = 0;
+    const noise = new Float32Array(planeSize);
+    let squaredNoise = 0;
+    for (let index = 0; index < planeSize; index += 1) {
+      const difference = video.values[nextOffset + index] - video.values[currentOffset + index];
+      squaredDifference += difference * difference;
+      const left = index % video.numFrames === 0 ? 0 : noise[index - 1];
+      const above = index < video.numFrames ? 0 : noise[index - video.numFrames];
+      const value = (Math.random() * 2 - 1) * 0.5 + left * 0.3 + above * 0.2;
+      noise[index] = value;
+      squaredNoise += value * value;
     }
-    context.putImageData(pixels, 0, 0);
-    canvases.push(canvas);
+    intervalRms[interval] = Math.sqrt(squaredDifference / planeSize);
+    const noiseScale = Math.sqrt(planeSize / squaredNoise);
+    for (let index = 0; index < planeSize; index += 1) noise[index] *= noiseScale;
+    noiseFields.push(noise);
   }
-  return canvases;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.numFrames;
+  canvas.height = video.numMels;
+  const context = canvas.getContext('2d');
+  return {
+    ...video,
+    canvas,
+    context,
+    pixels: context.createImageData(video.numFrames, video.numMels),
+    palette,
+    low,
+    scale,
+    planeSize,
+    intervalCount,
+    intervalRms,
+    noiseFields,
+  };
 }
 
-function drawMelVideoFrame(context, stepCanvases, progress) {
+function drawMelVideoFrame(context, renderer, progress, samplingMultiplier) {
   const width = context.canvas.width;
   const height = context.canvas.height;
-  const plot = { x: 58, y: 82, width: width - 92, height: height - 144 };
-  const stepPosition = progress * stepCanvases.length;
-  const stepIndex = Math.min(stepCanvases.length - 1, Math.floor(stepPosition));
-  const fade = stepPosition >= stepCanvases.length ? 1 : stepPosition - stepIndex;
+  const totalSimulatedSteps = renderer.intervalCount * samplingMultiplier;
+  const simulatedStep = Math.min(totalSimulatedSteps, Math.round(progress * totalSimulatedSteps));
+  const interval = Math.min(
+    renderer.intervalCount - 1,
+    Math.floor(simulatedStep / samplingMultiplier)
+  );
+  const stepInInterval = simulatedStep === totalSimulatedSteps
+    ? samplingMultiplier
+    : simulatedStep - interval * samplingMultiplier;
+  const amount = stepInInterval / samplingMultiplier;
+  const amount2 = amount * amount;
+  const amount3 = amount2 * amount;
+  const h00 = 2 * amount3 - 3 * amount2 + 1;
+  const h10 = amount3 - 2 * amount2 + amount;
+  const h01 = -2 * amount3 + 3 * amount2;
+  const h11 = amount3 - amount2;
+  const lastStep = renderer.steps - 1;
+  const previousStep = Math.max(0, interval - 1);
+  const nextStep = interval + 1;
+  const followingStep = Math.min(lastStep, nextStep + 1);
+  const previousOffset = previousStep * renderer.planeSize;
+  const currentOffset = interval * renderer.planeSize;
+  const nextOffset = nextStep * renderer.planeSize;
+  const followingOffset = followingStep * renderer.planeSize;
+  const noiseAmplitude =
+    0.35 * Math.pow(1 - simulatedStep / totalSimulatedSteps, 1.5) *
+    renderer.intervalRms[interval] * Math.sin(Math.PI * amount);
+  const noise = renderer.noiseFields[interval];
 
-  context.fillStyle = '#080a12';
-  context.fillRect(0, 0, width, height);
-  context.fillStyle = '#111525';
-  context.fillRect(plot.x, plot.y, plot.width, plot.height);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = 'high';
-  if (stepIndex > 0) {
-    context.globalAlpha = 1;
-    context.drawImage(stepCanvases[stepIndex - 1], plot.x, plot.y, plot.width, plot.height);
+  for (let mel = 0; mel < renderer.numMels; mel += 1) {
+    for (let frame = 0; frame < renderer.numFrames; frame += 1) {
+      const sourceIndex = mel * renderer.numFrames + frame;
+      const current = renderer.values[currentOffset + sourceIndex];
+      const next = renderer.values[nextOffset + sourceIndex];
+      const currentTangent = interval === 0
+        ? next - current
+        : (next - renderer.values[previousOffset + sourceIndex]) * 0.5;
+      const nextTangent = nextStep === lastStep
+        ? next - current
+        : (renderer.values[followingOffset + sourceIndex] - current) * 0.5;
+      const value =
+        h00 * current + h10 * currentTangent + h01 * next + h11 * nextTangent +
+        noiseAmplitude * noise[sourceIndex];
+      const level = Math.max(0, Math.min(255, Math.round((value - renderer.low) * renderer.scale)));
+      const color = renderer.palette[level];
+      const targetIndex = ((renderer.numMels - mel - 1) * renderer.numFrames + frame) * 4;
+      renderer.pixels.data[targetIndex] = color[0];
+      renderer.pixels.data[targetIndex + 1] = color[1];
+      renderer.pixels.data[targetIndex + 2] = color[2];
+      renderer.pixels.data[targetIndex + 3] = 255;
+    }
   }
-  context.globalAlpha = fade;
-  context.drawImage(stepCanvases[stepIndex], plot.x, plot.y, plot.width, plot.height);
-  context.globalAlpha = 1;
+  renderer.context.putImageData(renderer.pixels, 0, 0);
 
-  context.strokeStyle = '#3b4255';
-  context.lineWidth = 1;
-  context.strokeRect(plot.x + 0.5, plot.y + 0.5, plot.width - 1, plot.height - 1);
-  context.fillStyle = '#f0f3f7';
-  context.font = '600 24px -apple-system, BlinkMacSystemFont, sans-serif';
-  context.fillText('YingMusic · MEL SPECTROGRAM', plot.x, 44);
-  context.fillStyle = '#9ba7ba';
-  context.font = '15px -apple-system, BlinkMacSystemFont, sans-serif';
-  context.fillText(`Integration ${stepIndex + 1} / ${stepCanvases.length}`, plot.x, 67);
-  context.fillText('LOW', 17, plot.y + plot.height - 3);
-  context.fillText('HIGH', 12, plot.y + 14);
-  context.fillText('FULL AUDIO TIMELINE', plot.x, height - 28);
-  context.textAlign = 'right';
-  context.fillText(`${Math.round(progress * 100)}%`, plot.x + plot.width, height - 28);
-  context.textAlign = 'left';
+  context.imageSmoothingEnabled = false;
+  context.drawImage(renderer.canvas, 0, 0, width, height);
 }
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function encodeMelVideo(buffer, durationSeconds, onProgress) {
+async function encodeMelVideo(buffer, durationSeconds, samplingMultiplier, onProgress) {
   const mimeType = 'video/webm;codecs=vp9';
   if (!MediaRecorder.isTypeSupported(mimeType)) {
     throw new Error('当前环境不支持 VP9 WebM 编码');
   }
+  if (!Number.isInteger(durationSeconds) || durationSeconds < 20 || durationSeconds > 120) {
+    throw new RangeError('视频时长必须是 20 到 120 秒之间的整数');
+  }
+  if (!VIDEO_SAMPLING_MULTIPLIERS.includes(samplingMultiplier)) {
+    throw new RangeError('模拟采样倍数必须是 1、2、4、8、16、32、64 或 128');
+  }
   const video = parseMelVideo(buffer);
-  const stepCanvases = createMelStepCanvases(video);
+  const renderer = createMelVideoRenderer(video);
   const canvas = document.createElement('canvas');
-  canvas.width = 1280;
-  canvas.height = 720;
+  canvas.width = VIDEO_WIDTH;
+  canvas.height = VIDEO_HEIGHT;
   const context = canvas.getContext('2d');
   const stream = canvas.captureStream(30);
   const recorder = new MediaRecorder(stream, {
     mimeType,
-    videoBitsPerSecond: 8000000,
+    videoBitsPerSecond: VIDEO_BIT_RATE,
   });
   const chunks = [];
   recorder.addEventListener('dataavailable', (event) => {
@@ -253,7 +308,7 @@ async function encodeMelVideo(buffer, durationSeconds, onProgress) {
   try {
     for (let frame = 0; frame < totalFrames; frame += 1) {
       const progress = totalFrames === 1 ? 1 : frame / (totalFrames - 1);
-      drawMelVideoFrame(context, stepCanvases, progress);
+      drawMelVideoFrame(context, renderer, progress, samplingMultiplier);
       onProgress((frame + 1) / totalFrames);
       const targetTime = startedAt + ((frame + 1) * 1000) / frameRate;
       await delay(Math.max(0, targetTime - performance.now()));
@@ -750,6 +805,12 @@ function formatDb(value) {
 }
 
 function setupParams() {
+  const f0EstimatorSelect = $('svc-f0-estimator');
+  f0EstimatorSelect.value = state.svc.f0Estimator;
+  f0EstimatorSelect.addEventListener('change', () => {
+    state.svc.f0Estimator = f0EstimatorSelect.value;
+  });
+
   const bind = (id, valueId, get, set, format) => {
     const slider = $(id);
     slider.addEventListener('input', () => {
@@ -818,13 +879,56 @@ function setupParams() {
     (v) => (state.svc.videoDuration = v),
     (v) => `${v} 秒`
   );
+  const samplingMultiplierSlider = $('svc-video-sampling-multiplier');
+  const samplingMultiplierValue = $('svc-video-sampling-multiplier-value');
+  const setSamplingMultiplierExponent = (exponent) => {
+    const normalizedExponent = Math.min(7, Math.max(0, Math.round(exponent)));
+    state.svc.videoSamplingMultiplier = VIDEO_SAMPLING_MULTIPLIERS[normalizedExponent];
+    samplingMultiplierSlider.value = normalizedExponent;
+    samplingMultiplierValue.textContent = `${state.svc.videoSamplingMultiplier}`;
+  };
+  setSamplingMultiplierExponent(Math.log2(state.svc.videoSamplingMultiplier));
+  samplingMultiplierSlider.addEventListener('input', () => {
+    setSamplingMultiplierExponent(parseInt(samplingMultiplierSlider.value, 10));
+  });
+  samplingMultiplierValue.title = '双击编辑';
+  samplingMultiplierValue.addEventListener('dblclick', () => {
+    const editor = document.createElement('input');
+    editor.type = 'number';
+    editor.className = 'param-value-edit';
+    editor.min = '1';
+    editor.max = '128';
+    editor.step = '1';
+    editor.value = `${state.svc.videoSamplingMultiplier}`;
+    samplingMultiplierValue.replaceWith(editor);
+    editor.focus();
+    editor.select();
+
+    let finished = false;
+    const finish = (commit) => {
+      if (finished) return;
+      finished = true;
+      if (commit) {
+        let value = parseFloat(editor.value);
+        if (Number.isNaN(value)) value = state.svc.videoSamplingMultiplier;
+        value = Math.min(128, Math.max(1, value));
+        setSamplingMultiplierExponent(Math.log2(value));
+      }
+      editor.replaceWith(samplingMultiplierValue);
+    };
+    editor.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') finish(true);
+      else if (event.key === 'Escape') finish(false);
+    });
+    editor.addEventListener('blur', () => finish(true));
+  });
 
   $('svc-pitch-plus12').addEventListener('click', () => setPitch(12));
   $('svc-pitch-minus12').addEventListener('click', () => setPitch(-12));
-  const resynthToggle = $('svc-resynth-f0');
-  resynthToggle.checked = state.svc.resynthWithExplicitF0;
-  resynthToggle.addEventListener('change', () => {
-    state.svc.resynthWithExplicitF0 = resynthToggle.checked;
+  const keepFirstVocoderToggle = $('svc-keep-first-vocoder-output');
+  keepFirstVocoderToggle.checked = state.svc.keepFirstVocoderOutput;
+  keepFirstVocoderToggle.addEventListener('change', () => {
+    state.svc.keepFirstVocoderOutput = keepFirstVocoderToggle.checked;
   });
 }
 
@@ -855,13 +959,15 @@ function setupJobs() {
       await api.runSvc({
         sourcePath: state.svc.source.path,
         referencePath: state.svc.reference.path,
+        f0Estimator: state.svc.f0Estimator,
         diffusionSteps: state.svc.steps,
         pitchShift: state.svc.pitchShift,
         cfgRate: state.svc.cfgRate,
         inputGainDb: state.svc.inputGainDb,
-        resynthWithExplicitF0: state.svc.resynthWithExplicitF0,
+        keepFirstVocoderOutput: state.svc.keepFirstVocoderOutput,
         generateVideo,
         videoDuration: state.svc.videoDuration,
+        videoSamplingMultiplier: state.svc.videoSamplingMultiplier,
       });
     } catch (error) {
       state.running = false;
@@ -887,10 +993,15 @@ function setupJobs() {
       try {
         setStatus('生成频谱视频 0%');
         setProgress(0);
-        const video = await encodeMelVideo(msg.melData, msg.videoDuration, (fraction) => {
-          setStatus(`生成频谱视频 ${Math.round(fraction * 100)}%`);
-          setProgress(fraction);
-        });
+        const video = await encodeMelVideo(
+          msg.melData,
+          msg.videoDuration,
+          msg.videoSamplingMultiplier,
+          (fraction) => {
+            setStatus(`生成频谱视频 ${Math.round(fraction * 100)}%`);
+            setProgress(fraction);
+          }
+        );
         const bytes = new Uint8Array(await video.arrayBuffer());
         await api.writeVideo(msg.videoOutput, bytes);
         state.running = false;

@@ -95,6 +95,18 @@
         <div class="section-title">参数</div>
         <div class="params">
           <div class="param">
+            <label class="param-label" for="svc-f0-estimator">
+              <span>F0 estimator</span>
+              <span class="param-hint">选择音高提取器</span>
+            </label>
+            <div class="param-control select-control">
+              <select id="svc-f0-estimator" aria-label="F0 estimator">
+                <option value="rmvpe">RMVPE</option>
+                <option value="fcpe">FCPE</option>
+              </select>
+            </div>
+          </div>
+          <div class="param">
             <div class="param-label">
               <span>扩散步数</span>
               <span class="param-hint">diffusion 采样步数，越高越精细，耗时线性增加</span>
@@ -137,12 +149,12 @@
             </div>
           </div>
           <div class="param">
-            <label class="param-label" for="svc-resynth-f0">
-              <span>resynth w/ explicit f0</span>
-              <span class="param-hint">额外使用 pc-nsf-hifigan 输出显式 F0 重合成音频</span>
+            <label class="param-label" for="svc-keep-first-vocoder-output">
+              <span>keep first vocoder output</span>
+              <span class="param-hint">保存未经过显式f0合成的首个Vocoder的输出</span>
             </label>
             <div class="param-control checkbox-control">
-              <input type="checkbox" id="svc-resynth-f0" checked>
+              <input type="checkbox" id="svc-keep-first-vocoder-output">
             </div>
           </div>
         </div>
@@ -157,11 +169,21 @@
             <div class="param">
               <div class="param-label">
                 <span>视频时长</span>
-                <span class="param-hint">完整 mel spectrogram 动画时长；每个积分步占总时长的等分</span>
+                <span class="param-hint">完整 mel spectrogram 动画时长</span>
               </div>
               <div class="param-control">
-                <input type="range" id="svc-video-duration" min="15" max="30" step="1" value="20">
+                <input type="range" id="svc-video-duration" min="20" max="120" step="1" value="20">
                 <span class="param-value" id="svc-video-duration-value">20 秒</span>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>模拟采样倍数</span>
+                <span class="param-hint">在相邻 re-flow step 之间生成用于视频展示的中间状态</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="svc-video-sampling-multiplier" min="0" max="7" step="1" value="5">
+                <span class="param-value" id="svc-video-sampling-multiplier-value">32</span>
               </div>
             </div>
             <button class="primary-btn" id="svc-run-video">转换并生成视频</button>

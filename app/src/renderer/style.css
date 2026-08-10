@@ -341,6 +341,31 @@ body {
   justify-content: flex-end;
 }
 
+.select-control {
+  justify-content: flex-end;
+}
+
+.select-control select {
+  width: 320px;
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--fg);
+  background: var(--bg-side);
+  font: inherit;
+  cursor: pointer;
+}
+
+.select-control select:hover {
+  border-color: var(--fg-faint);
+}
+
+.select-control select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 .checkbox-control input[type="checkbox"] {
   appearance: none;
   width: 16px;

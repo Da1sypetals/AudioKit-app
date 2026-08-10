@@ -39,12 +39,14 @@ const outputDir = path.join(cacheRoot, 'output');
 
 const SVC_MODEL_PATHS = {
   whisper: path.join(modelsDir, 'yingmusic', 'whisper.safetensors'),
+  rmvpe: path.join(modelsDir, 'yingmusic', 'rmvpe.safetensors'),
   fcpe: path.join(modelsDir, 'yingmusic', 'fcpe.safetensors'),
   campplus: path.join(modelsDir, 'yingmusic', 'campplus.safetensors'),
   yingmusic: path.join(modelsDir, 'yingmusic', 'yingmusic_step_000640.safetensors'),
   pupuVocoder: path.join(modelsDir, 'yingmusic', 'pupu-vocoder-large.safetensors'),
   pcNsfHifigan: path.join(modelsDir, 'yingmusic', 'pc-nsf-hifigan.safetensors'),
 };
+const VIDEO_SAMPLING_MULTIPLIERS = new Set([1, 2, 4, 8, 16, 32, 64, 128]);
 const SEP_MODEL_PATH = path.join(modelsDir, 'separation', 'melband-roformer.safetensors');
 
 let mainWindow = null;
@@ -379,41 +381,54 @@ function registerIpc() {
     const {
       sourcePath,
       referencePath,
+      f0Estimator,
       diffusionSteps,
       pitchShift,
       cfgRate,
       inputGainDb,
-      resynthWithExplicitF0,
+      keepFirstVocoderOutput,
       generateVideo,
       videoDuration,
+      videoSamplingMultiplier,
     } = options;
+    if (!['rmvpe', 'fcpe'].includes(f0Estimator)) {
+      throw new RangeError('F0 estimator 必须是 rmvpe 或 fcpe');
+    }
     if (!Number.isFinite(inputGainDb) || inputGainDb < -12 || inputGainDb > 3) {
       throw new RangeError('Input gain 必须在 -12 dB 到 +3 dB 之间');
     }
     if (!Number.isInteger(inputGainDb * 2)) {
       throw new RangeError('Input gain 必须使用 0.5 dB 步长');
     }
-    if (typeof resynthWithExplicitF0 !== 'boolean') {
-      throw new TypeError('resynth w/ explicit f0 必须是 boolean');
+    if (typeof keepFirstVocoderOutput !== 'boolean') {
+      throw new TypeError('keep first vocoder output 必须是 boolean');
     }
     if (typeof generateVideo !== 'boolean') {
       throw new TypeError('generateVideo 必须是 boolean');
     }
-    if (generateVideo && (!Number.isInteger(videoDuration) || videoDuration < 15 || videoDuration > 30)) {
-      throw new RangeError('视频时长必须是 15 到 30 秒之间的整数');
+    if (generateVideo && (!Number.isInteger(videoDuration) || videoDuration < 20 || videoDuration > 120)) {
+      throw new RangeError('视频时长必须是 20 到 120 秒之间的整数');
+    }
+    if (
+      generateVideo &&
+      !VIDEO_SAMPLING_MULTIPLIERS.has(videoSamplingMultiplier)
+    ) {
+      throw new RangeError('模拟采样倍数必须是 1、2、4、8、16、32、64 或 128');
     }
     const jobId = `svc-${++jobCounter}`;
     const groupDir = createOutputGroup(
       'svc',
       path.basename(sourcePath),
       {
+        f0Estimator,
         diffusionSteps,
         pitchShift,
         cfgRate,
         inputGainDb,
-        resynthWithExplicitF0,
+        keepFirstVocoderOutput,
         generateVideo,
         videoDuration: generateVideo ? videoDuration : null,
+        videoSamplingMultiplier: generateVideo ? videoSamplingMultiplier : null,
         reference: path.basename(referencePath),
       },
       [stemOf(sourcePath), 'to', stemOf(referencePath)]
@@ -426,15 +441,17 @@ function registerIpc() {
       paths: SVC_MODEL_PATHS,
       source: sourcePath,
       reference: referencePath,
+      f0Estimator,
       diffusionSteps,
       pitchShift,
       cfgRate,
       inputGainDb,
-      resynthWithExplicitF0,
+      keepFirstVocoderOutput,
       generateVideo,
       videoDuration,
+      videoSamplingMultiplier,
       output: path.join(groupDir, `${outputStem}.wav`),
-      reF0Output: path.join(groupDir, `${outputStem}_re_f0.wav`),
+      firstVocoderOutput: path.join(groupDir, `${outputStem}_first_vocoder.wav`),
       videoMelOutput: path.join(groupDir, '.mel-video.akmv'),
       videoOutput,
     });

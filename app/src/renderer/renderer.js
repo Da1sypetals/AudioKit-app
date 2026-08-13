@@ -14,6 +14,59 @@ const VIDEO_HEIGHT = 1440;
 const VIDEO_BIT_RATE = 24000000;
 const VIDEO_SAMPLING_MULTIPLIERS = [1, 2, 4, 8, 16, 32, 64, 128];
 
+const CATEGORIES = [
+  { id: 'unclassified', letter: 'U', label: 'Unclassified' },
+  { id: 'vocal', letter: 'V', label: 'Vocal' },
+  { id: 'instrumental', letter: 'I', label: 'Instrumental' },
+  { id: 'mix', letter: 'M', label: 'Mix' },
+];
+
+function categoryOf(file) {
+  return CATEGORIES.find((c) => c.id === file.category) || CATEGORIES[0];
+}
+
+function makeCategoryLetter(category) {
+  const letter = document.createElement('span');
+  letter.className = `cat-letter cat-${category.id}`;
+  letter.textContent = category.letter;
+  letter.title = category.label;
+  return letter;
+}
+
+let categoryMenu = null;
+
+function closeCategoryMenu() {
+  if (categoryMenu) {
+    categoryMenu.remove();
+    categoryMenu = null;
+  }
+}
+
+function openCategoryMenu(x, y, file, onSetCategory) {
+  closeCategoryMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  for (const category of CATEGORIES) {
+    const item = document.createElement('button');
+    item.className = 'context-menu-item';
+    if (categoryOf(file).id === category.id) item.classList.add('active');
+    item.appendChild(makeCategoryLetter(category));
+    const label = document.createElement('span');
+    label.textContent = category.label;
+    item.appendChild(label);
+    item.addEventListener('click', () => {
+      closeCategoryMenu();
+      void onSetCategory(file, category.id);
+    });
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 4)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 4)}px`;
+  categoryMenu = menu;
+}
+
 const state = {
   view: 'separation',
   running: false,
@@ -325,7 +378,7 @@ async function encodeMelVideo(buffer, durationSeconds, samplingMultiplier, onPro
 
 /* ---------------- rendering ---------------- */
 
-function renderFileList(element, files, { selectedPath, onSelect, onDelete, emptyText, itemTitleSuffix = '' }) {
+function renderFileList(element, files, { selectedPath, onSelect, onDelete, emptyText, itemTitleSuffix = '', categorizable = false, onSetCategory = null }) {
   element.innerHTML = '';
   if (files.length === 0) {
     const li = document.createElement('li');
@@ -337,6 +390,16 @@ function renderFileList(element, files, { selectedPath, onSelect, onDelete, empt
   for (const file of files) {
     const li = document.createElement('li');
     if (selectedPath === file.path) li.classList.add('selected');
+
+    if (categorizable) {
+      const category = categoryOf(file);
+      li.classList.add(`cat-${category.id}`);
+      li.appendChild(makeCategoryLetter(category));
+      li.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        openCategoryMenu(event.clientX, event.clientY, file, onSetCategory);
+      });
+    }
 
     const name = document.createElement('span');
     name.className = 'file-name';
@@ -377,6 +440,12 @@ function renderSidebar() {
   renderFileList($('sep-input-list'), state.inputs, {
     selectedPath: state.sep.input?.path,
     emptyText: '拖放音频到此处',
+    categorizable: true,
+    onSetCategory: async (file, category) => {
+      state.inputs = await api.setInputCategory(file.name, category);
+      syncSelectedFiles();
+      renderSidebar();
+    },
     onSelect: (file) => {
       state.sep.input = file;
       updateInputDisplays();
@@ -410,6 +479,12 @@ function renderSidebar() {
   renderFileList($('svc-input-list'), state.inputs, {
     selectedPath: state.svc.source?.path,
     emptyText: '拖放音频到此处',
+    categorizable: true,
+    onSetCategory: async (file, category) => {
+      state.inputs = await api.setInputCategory(file.name, category);
+      syncSelectedFiles();
+      renderSidebar();
+    },
     onSelect: (file) => {
       state.svc.source = file;
       updateInputDisplays();
@@ -748,6 +823,31 @@ function setupTimbreRename() {
 }
 
 /* ---------------- data loading ---------------- */
+
+// 列表刷新后同步选中态：文件被外部删除时清空选中，否则指向最新对象
+function syncSelectedFiles() {
+  if (state.sep.input) {
+    state.sep.input = state.inputs.find((f) => f.path === state.sep.input.path) || null;
+  }
+  if (state.svc.source) {
+    state.svc.source = state.inputs.find((f) => f.path === state.svc.source.path) || null;
+  }
+  if (state.svc.reference) {
+    state.svc.reference = state.timbres.find((f) => f.path === state.svc.reference.path) || null;
+  }
+}
+
+function setupFilesChanged() {
+  api.onFilesChanged(async ({ which }) => {
+    if (which === 'timbre') state.timbres = await api.listTimbre();
+    else if (which === 'input') state.inputs = await api.listInputs();
+    else if (which === 'output') state.outputs = await api.listOutputs();
+    syncSelectedFiles();
+    updateInputDisplays();
+    renderSidebar();
+    renderOutputs();
+  });
+}
 
 async function refreshAll() {
   [state.timbres, state.inputs, state.outputs] = await Promise.all([
@@ -1100,6 +1200,12 @@ function init() {
   setupSidebarActions();
   setupTimbreRename();
   setupSeekGlobal();
+  setupFilesChanged();
+  document.addEventListener('click', closeCategoryMenu);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeCategoryMenu();
+  });
+  window.addEventListener('blur', closeCategoryMenu);
   refreshAll();
   setStatus('就绪');
 }

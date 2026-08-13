@@ -59,6 +59,10 @@
 ## 依赖与submodule
 本项目包含的依赖关系比较复杂，包括基础库mlx-rs/mlx-sys/mlx-c，以及一些基础神经网络模块，比如fcpe和vocoders。
 需要遵守的规则：
-- 如果需要更新任何底层库，就要同时更新任何引用了该底层库的库，对那个底层库的引用 (If you a library X is updated to version A, all libraries that references X should be updated to version A)
+- 如果需要更新任何底层库，就要同时更新任何引用了该底层库的库，对那个底层库的引用 (If you a library X is updated to version A, all libraries that references X should be updated to reference version A of library X)
     - 比如mlx-rs需要更新，那么由于几乎所有的神经网络模块都引用了mlx-rs，因此，几乎所有神经网络模块的Cargo.toml都要更新
     - 如果mlx-c需要更新，则mlx-rs也需要指向那个mlx-c的提交，然后紧接着上层神经网络模块也都要更新。
+
+## Coding
+
+编写完代码之后，你必须进行构建、安装到/Applications，使用tools/release.sh

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('audiokit', {
   listInputs: () => ipcRenderer.invoke('input:list'),
   importInput: (filePaths) => ipcRenderer.invoke('input:import', filePaths),
   deleteInput: (name) => ipcRenderer.invoke('input:delete', name),
+  setInputCategory: (name, category) => ipcRenderer.invoke('input:set-category', name, category),
 
   listOutputs: () => ipcRenderer.invoke('outputs:list'),
   deleteOutput: (dirName) => ipcRenderer.invoke('outputs:delete', dirName),
@@ -25,6 +26,12 @@ contextBridge.exposeInMainWorld('audiokit', {
     const listener = (_event, msg) => callback(msg);
     ipcRenderer.on('job:event', listener);
     return () => ipcRenderer.removeListener('job:event', listener);
+  },
+
+  onFilesChanged: (callback) => {
+    const listener = (_event, msg) => callback(msg);
+    ipcRenderer.on('files:changed', listener);
+    return () => ipcRenderer.removeListener('files:changed', listener);
   },
 
   startDrag: (filePath) => ipcRenderer.send('drag:start', filePath),

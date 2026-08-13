@@ -23,6 +23,7 @@ const AUDIO_EXTENSIONS = new Set([
   '.opus',
 ]);
 const VIDEO_EXTENSIONS = new Set(['.mp4']);
+const CATEGORIES = new Set(['unclassified', 'vocal', 'instrumental', 'mix']);
 
 const resourcesRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
 const modelsDir = path.join(resourcesRoot, 'Models');
@@ -125,6 +126,20 @@ function copyInto(sourcePath, destDir) {
   return dest;
 }
 
+function sidecarPath(filePath) {
+  return `${filePath}.ak.json`;
+}
+
+function readCategory(filePath) {
+  const metaPath = sidecarPath(filePath);
+  if (!fs.existsSync(metaPath)) return 'unclassified';
+  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  if (!CATEGORIES.has(meta.category)) {
+    throw new Error(`分类元数据非法: ${metaPath}`);
+  }
+  return meta.category;
+}
+
 function audioFileInfo(filePath) {
   const stat = fs.statSync(filePath);
   return {
@@ -134,6 +149,7 @@ function audioFileInfo(filePath) {
     size: stat.size,
     mtime: stat.mtimeMs,
     kind: isVideoFile(filePath) ? 'video' : 'audio',
+    category: readCategory(filePath),
   };
 }
 
@@ -190,6 +206,32 @@ function createOutputGroup(type, source, params, stemParts) {
 
 function stemOf(filePath) {
   return path.basename(filePath, path.extname(filePath));
+}
+
+function pushFilesChanged(which) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('files:changed', { which });
+  }
+}
+
+function requireExisting(filePaths) {
+  for (const filePath of filePaths) {
+    if (fs.existsSync(filePath)) continue;
+    if (filePath.startsWith(inputDir + path.sep)) pushFilesChanged('input');
+    else if (filePath.startsWith(timbreDir + path.sep)) pushFilesChanged('timbre');
+    throw new Error(`文件已被移动或删除: ${path.basename(filePath)}`);
+  }
+}
+
+const watchers = [];
+
+function watchDir(which, dir) {
+  let timer = null;
+  const watcher = fs.watch(dir, { recursive: true }, () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => pushFilesChanged(which), 300);
+  });
+  watchers.push(watcher);
 }
 
 function resolveDragFile(filePath) {
@@ -322,8 +364,20 @@ function registerIpc() {
   ipcMain.handle('input:delete', (_event, name) => {
     const target = path.join(inputDir, path.basename(name));
     if (fs.existsSync(target)) fs.unlinkSync(target);
+    const sidecar = sidecarPath(target);
+    if (fs.existsSync(sidecar)) fs.unlinkSync(sidecar);
     return listAudioFiles(inputDir);
   });
+
+  const setCategoryHandler = (dir) => (_event, name, category) => {
+    if (!CATEGORIES.has(category)) throw new RangeError(`非法分类: ${category}`);
+    const target = path.join(dir, path.basename(name));
+    if (!fs.existsSync(target)) throw new Error(`文件不存在: ${name}`);
+    fs.writeFileSync(sidecarPath(target), JSON.stringify({ category }, null, 2));
+    return listAudioFiles(dir);
+  };
+
+  ipcMain.handle('input:set-category', setCategoryHandler(inputDir));
 
   ipcMain.handle('outputs:list', () => listOutputs());
 
@@ -360,6 +414,7 @@ function registerIpc() {
 
   ipcMain.handle('job:sep', (event, options) => {
     const { inputPath, numOverlap } = options;
+    requireExisting([inputPath]);
     const jobId = `sep-${++jobCounter}`;
     const groupDir = createOutputGroup('separation', path.basename(inputPath), { numOverlap }, [
       stemOf(inputPath),
@@ -391,6 +446,7 @@ function registerIpc() {
       videoDuration,
       videoSamplingMultiplier,
     } = options;
+    requireExisting([sourcePath, referencePath]);
     if (!['rmvpe', 'fcpe'].includes(f0Estimator)) {
       throw new RangeError('F0 estimator 必须是 rmvpe 或 fcpe');
     }
@@ -500,6 +556,9 @@ app.whenReady().then(() => {
   ensureDirs();
   registerIpc();
   createWindow();
+  watchDir('timbre', timbreDir);
+  watchDir('input', inputDir);
+  watchDir('output', outputDir);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -511,6 +570,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('quit', () => {
+  for (const watcher of watchers) watcher.close();
   if (worker) {
     worker.terminate();
     worker = null;

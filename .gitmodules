@@ -4,3 +4,6 @@
 [submodule "melband-roformer-mlx"]
 	path = melband-roformer-mlx
 	url = git@github.com:Da1sypetals/melband-roformer-mlx.git
+[submodule "rmvpe-mlx"]
+	path = rmvpe-mlx
+	url = git@github.com:blossom-slopware/rmvpe-mlx.git

@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('audiokit', {
   fetchLrc: (input) => ipcRenderer.invoke('lrc:fetch', input),
   pickImage: () => ipcRenderer.invoke('lrcvideo:pick-image'),
   readImage: (filePath) => ipcRenderer.invoke('lrcvideo:read-image', filePath),
+  listFonts: () => ipcRenderer.invoke('lrcvideo:list-fonts'),
   saveLrcVideo: (options) => ipcRenderer.invoke('lrcvideo:save', options),
 
   onJobEvent: (callback) => {

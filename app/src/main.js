@@ -450,6 +450,16 @@ function registerIpc() {
 
   ipcMain.handle('lrcvideo:read-image', (_event, filePath) => readImageFile(filePath));
 
+  ipcMain.handle('lrcvideo:list-fonts', () => {
+    const dir = path.join(__dirname, '..', 'fonts');
+    if (!fs.existsSync(dir)) return [];
+    const exts = new Set(['.ttf', '.otf', '.woff', '.woff2']);
+    return fs
+      .readdirSync(dir)
+      .filter((f) => exts.has(path.extname(f).toLowerCase()))
+      .sort();
+  });
+
   ipcMain.handle('lrcvideo:save', async (_event, options) => {
     const { bytes, songName, artists, songId, width, height } = options;
     if (!(bytes instanceof Uint8Array) || bytes.length === 0) {

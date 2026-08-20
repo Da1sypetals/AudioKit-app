@@ -1,14 +1,18 @@
 /* 歌词视频：网易云 LRC 抓取、片段选取、字幕样式与 MP4 导出 */
 
 const LRC_LEAD_IN = 2.4; // 片头时长（标题卡 + 首行入场）
-const LRC_TAIL = 2.6; // 片尾停留
 const LRC_FADE_IN = 0.5;
 const LRC_FADE_OUT = 0.8;
 const LRC_TRANSITION = 0.45; // 换行滚动过渡
 const LRC_FPS = 30;
 const LRC_FONT_STACK = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
-const LRC_ANCHOR_ROWS = ['上', '偏上', '正中', '偏下', '下'];
-const LRC_ANCHOR_COLS = ['靠左', '偏左', '居中', '偏右', '靠右'];
+const LRC_ANCHOR_ROWS = ['极上', '靠上', '偏上', '正中', '偏下', '靠下', '极下'];
+const LRC_ANCHOR_COLS = ['极左', '靠左', '偏左', '左中', '居中', '右中', '偏右', '靠右', '极右'];
+// 锚点列（0~8）推导默认对齐：左三列靠左、中三列居中、右三列靠右
+function anchorAlign(anchor) {
+  const col = anchor % 9;
+  return col <= 2 ? 0 : col <= 5 ? 1 : 2;
+}
 const LRC_ASPECTS = [
   { label: '9:16', w: 1080, h: 1920 },
   { label: '3:4', w: 1440, h: 1920 },
@@ -23,15 +27,19 @@ const lrcState = {
   startIdx: null,
   endIdx: null,
   image: null, // { bitmap, name, width, height }
-  anchor: 22, // 5x5 锚点，默认下排居中
-  fontSize: 52,
+  anchor: 51, // 9x7 锚点，默认靠下排偏右
+  align: 2, // 字幕对齐：0 靠左 / 1 居中 / 2 靠右，随锚点联动也可单独调整
+  fontSize: 70,
   textColor: '#ffffff',
   shadow: true,
   shadowColor: '#000000',
-  blur: 0,
-  darken: 0,
+  shadowStrength: 150, // 百分比，100 为初始设计效果
+  blur: 1.5,
+  darken: 35,
   aspectIndex: 4, // 默认 16:9
   aspectFit: false,
+  tailHold: 4, // 最后一句结束后完整停留秒数，之后才开始淡出
+  fontFamily: '', // 空 = 默认系统字体栈
   playing: false,
   playT: 0,
   playStart: 0,
@@ -178,7 +186,8 @@ function buildScene() {
   const t0 = lines[startIdx].t;
   const start = Math.max(0, t0 - LRC_LEAD_IN);
   const leadIn = t0 - start;
-  const duration = lines[endIdx].t + LRC_TAIL - start;
+  // 片尾：最后一句停留 tailHold 秒（完整显示），随后 LRC_FADE_OUT 秒淡出
+  const duration = lines[endIdx].t + lrcState.tailHold + LRC_FADE_OUT - start;
   return {
     w,
     h,
@@ -198,10 +207,13 @@ function buildScene() {
     song,
     style: {
       anchor: lrcState.anchor,
+      align: lrcState.align,
+      fontStack: lrcState.fontFamily ? `"${lrcState.fontFamily}", ${LRC_FONT_STACK}` : LRC_FONT_STACK,
       fontSize: lrcState.fontSize,
       textColor: lrcState.textColor,
       shadow: lrcState.shadow,
       shadowColor: lrcState.shadowColor,
+      shadowStrength: lrcState.shadowStrength,
     },
   };
 }
@@ -229,19 +241,20 @@ function focusAt(scene, t) {
 
 function applyTextShadow(ctx, style, size) {
   if (!style.shadow) return;
+  const k = style.shadowStrength / 100;
   ctx.shadowColor = hexWithAlpha(style.shadowColor, 0.85);
-  ctx.shadowBlur = size * 0.3;
-  ctx.shadowOffsetY = size * 0.045;
+  ctx.shadowBlur = size * 0.3 * k;
+  ctx.shadowOffsetY = size * 0.045 * k;
 }
 
 // 长行按可用宽度等比缩小字号，避免溢出画面
-function fitFont(ctx, text, weight, size, maxWidth) {
+function fitFont(ctx, text, weight, size, maxWidth, stack) {
   let fitted = size;
-  ctx.font = `${weight} ${fitted}px ${LRC_FONT_STACK}`;
+  ctx.font = `${weight} ${fitted}px ${stack}`;
   const measured = ctx.measureText(text).width;
   if (measured > maxWidth) {
     fitted = (fitted * maxWidth) / measured;
-    ctx.font = `${weight} ${fitted}px ${LRC_FONT_STACK}`;
+    ctx.font = `${weight} ${fitted}px ${stack}`;
   }
   return fitted;
 }
@@ -288,37 +301,37 @@ function drawScene(ctx, scene, t) {
       applyTextShadow(ctx, style, S);
       ctx.fillStyle = style.textColor;
       ctx.globalAlpha = alpha;
-      const nameSize = fitFont(ctx, song.name, 600, S * 1.02, w * 0.8);
+      const nameSize = fitFont(ctx, song.name, 600, S * 1.02, w * 0.8, style.fontStack);
       applyTextShadow(ctx, style, nameSize);
       ctx.fillText(song.name, w / 2, h / 2 - S * 0.42);
       ctx.globalAlpha = alpha * 0.72;
-      fitFont(ctx, song.artists, 400, S * 0.44, w * 0.7);
+      fitFont(ctx, song.artists, 400, S * 0.44, w * 0.7, style.fontStack);
       ctx.fillText(song.artists, w / 2, h / 2 + S * 0.62);
       ctx.restore();
     }
   }
 
   // 歌词块：前一句（暗）、当前句（亮）、后一句（暗）
-  // 5x5 锚点：列决定水平位置与对齐（居中列才居中，其余列靠对应侧对齐），行决定垂直位置
-  const ax = style.anchor % 5;
-  const ay = Math.floor(style.anchor / 5);
-  const marginX = w * 0.08;
+  // 9x7 锚点决定字幕块位置；对齐方式由「字幕对齐」独立控制
+  const ax = style.anchor % 9;
+  const ay = Math.floor(style.anchor / 9);
+  const marginX = w * 0.03;
   const marginY = h * 0.09;
   const topY = marginY + lineHeight;
   const bottomY = h - marginY - lineHeight;
-  const focusY = topY + (ay / 4) * (bottomY - topY);
-  const textX = marginX + (ax / 4) * (w - marginX * 2);
+  const focusY = topY + (ay / 6) * (bottomY - topY);
+  const textX = marginX + (ax / 8) * (w - marginX * 2);
   const blockAlpha = clamp01((t - Math.max(0, leadIn - 0.55)) / 0.5);
   const focus = focusAt(scene, t);
 
   ctx.save();
-  ctx.textAlign = ax === 2 ? 'center' : ax < 2 ? 'left' : 'right';
+  ctx.textAlign = ['left', 'center', 'right'][style.align];
   ctx.textBaseline = 'middle';
   ctx.fillStyle = style.textColor;
   const maxTextWidth =
-    ax === 2
+    style.align === 1
       ? Math.min(textX - marginX, w - marginX - textX) * 2 * 0.96
-      : ax < 2
+      : style.align === 0
         ? (w - marginX - textX) * 0.96
         : (textX - marginX) * 0.96;
   const lo = Math.max(0, Math.ceil(focus - 1.6));
@@ -333,7 +346,8 @@ function drawScene(ctx, scene, t) {
       lines[j].text,
       ad < 0.5 ? 600 : 500,
       S * (1 - 0.34 * Math.min(1, ad)),
-      maxTextWidth
+      maxTextWidth,
+      style.fontStack
     );
     ctx.globalAlpha = alpha;
     applyTextShadow(ctx, style, size);
@@ -362,7 +376,8 @@ function currentScene() {
       canvas.width = w;
       canvas.height = h;
     }
-    if (lrcState.scene) lrcState.playT = Math.min(lrcState.playT, lrcState.scene.duration);
+    // 场景重建后播放头落到视频中央：开头是黑场淡入，中央能直接看到歌词效果
+    if (lrcState.scene) lrcState.playT = lrcState.scene.duration / 2;
   }
   return lrcState.scene;
 }
@@ -466,7 +481,7 @@ function renderRangeInfo() {
   }
   const endLine = lines[endIdx];
   const count = endIdx - startIdx + 1;
-  const duration = endLine.t + LRC_TAIL - Math.max(0, startLine.t - LRC_LEAD_IN);
+  const duration = endLine.t + lrcState.tailHold + LRC_FADE_OUT - Math.max(0, startLine.t - LRC_LEAD_IN);
   info.textContent =
     `起 ${formatLineTime(startLine.t)} → 终 ${formatLineTime(endLine.t)} · 共 ${count} 行 · 视频时长约 ${duration.toFixed(1)} 秒`;
 }
@@ -757,6 +772,24 @@ function setupLrcParams() {
     markSceneDirty();
   });
 
+  const shadowStrength = $('lrc-shadow-strength');
+  const shadowStrengthValue = $('lrc-shadow-strength-value');
+  shadowStrength.value = lrcState.shadowStrength;
+  shadowStrength.addEventListener('input', () => {
+    lrcState.shadowStrength = parseInt(shadowStrength.value, 10);
+    shadowStrengthValue.textContent = `${shadowStrength.value}%`;
+    markSceneDirty();
+  });
+
+  const tailHold = $('lrc-tail-hold');
+  const tailHoldValue = $('lrc-tail-hold-value');
+  tailHold.value = lrcState.tailHold;
+  tailHold.addEventListener('input', () => {
+    lrcState.tailHold = parseInt(tailHold.value, 10);
+    tailHoldValue.textContent = `${tailHold.value} 秒`;
+    markSceneDirty();
+  });
+
   const aspectSlider = $('lrc-aspect');
   const aspectValue = $('lrc-aspect-value');
   aspectSlider.value = lrcState.aspectIndex;
@@ -790,17 +823,63 @@ function setupLrcParams() {
     markPlateDirty();
   });
 
+  const alignGroup = $('lrc-align');
+  const updateAlignUI = () => {
+    alignGroup.querySelectorAll('button').forEach((el) => {
+      el.classList.toggle('active', parseInt(el.dataset.value, 10) === lrcState.align);
+    });
+  };
+  alignGroup.querySelectorAll('button').forEach((button) => {
+    button.addEventListener('click', () => {
+      lrcState.align = parseInt(button.dataset.value, 10);
+      updateAlignUI();
+      markSceneDirty();
+    });
+  });
+  updateAlignUI();
+
   const grid = $('lrc-anchor-grid');
-  for (let i = 0; i < 25; i += 1) {
+  for (let i = 0; i < 63; i += 1) {
     const button = document.createElement('button');
-    button.title = `${LRC_ANCHOR_ROWS[Math.floor(i / 5)]}·${LRC_ANCHOR_COLS[i % 5]}`;
+    button.title = `${LRC_ANCHOR_ROWS[Math.floor(i / 9)]}·${LRC_ANCHOR_COLS[i % 9]}`;
     if (i === lrcState.anchor) button.classList.add('active');
     button.addEventListener('click', () => {
       lrcState.anchor = i;
+      // 锚点联动默认对齐，用户仍可单独调整
+      lrcState.align = anchorAlign(i);
+      updateAlignUI();
       grid.querySelectorAll('button').forEach((el, j) => el.classList.toggle('active', j === i));
       markSceneDirty();
     });
     grid.appendChild(button);
+  }
+}
+
+const lrcFontCache = new Map(); // file -> 已注册的 family 名
+
+async function loadLrcFont(file) {
+  if (lrcFontCache.has(file)) return lrcFontCache.get(file);
+  const family = file.replace(/\.[^.]+$/, '');
+  const face = new FontFace(family, `url("../../fonts/${encodeURI(file)}")`);
+  await face.load();
+  document.fonts.add(face);
+  lrcFontCache.set(file, family);
+  return family;
+}
+
+async function setupFontSelect() {
+  const select = $('lrc-font-family');
+  select.addEventListener('change', async () => {
+    lrcState.fontFamily = select.value ? await loadLrcFont(select.value) : '';
+    markSceneDirty();
+    renderPreview();
+  });
+  const files = await api.listFonts();
+  for (const file of files) {
+    const option = document.createElement('option');
+    option.value = file;
+    option.textContent = file.replace(/\.[^.]+$/, '');
+    select.appendChild(option);
   }
 }
 
@@ -829,6 +908,7 @@ function initLrcvideo() {
   });
   $('lrc-generate').addEventListener('click', generateVideo);
   setupLrcParams();
+  setupFontSelect();
   renderLrcList();
   renderPreview();
   updateLrcGenerateButton();

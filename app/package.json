@@ -18,6 +18,7 @@
     },
     "files": [
       "src/**/*",
+      "fonts/**/*",
       "package.json"
     ],
     "extraResources": [

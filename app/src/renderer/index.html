@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' file:; style-src 'self' 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' file:; font-src 'self' file:; style-src 'self' 'unsafe-inline'">
   <title>AudioKit</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -80,7 +80,6 @@
           <div class="param">
             <div class="param-label">
               <span>重叠次数</span>
-              <span class="param-hint">chunk 重叠倍数，越高接缝越平滑，耗时线性增加</span>
             </div>
             <div class="param-control">
               <input type="range" id="sep-overlap" min="1" max="8" step="1" value="2">
@@ -115,7 +114,6 @@
           <div class="param">
             <label class="param-label" for="svc-f0-estimator">
               <span>F0 estimator</span>
-              <span class="param-hint">选择音高提取器</span>
             </label>
             <div class="param-control select-control">
               <select id="svc-f0-estimator" aria-label="F0 estimator">
@@ -127,7 +125,6 @@
           <div class="param">
             <div class="param-label">
               <span>扩散步数</span>
-              <span class="param-hint">diffusion 采样步数，越高越精细，耗时线性增加</span>
             </div>
             <div class="param-control">
               <input type="range" id="svc-steps" min="1" max="64" step="1" value="16">
@@ -137,7 +134,6 @@
           <div class="param">
             <div class="param-label">
               <span>音高偏移</span>
-              <span class="param-hint">半音为单位，正值升调、负值降调</span>
             </div>
             <div class="param-control">
               <button class="step-btn" id="svc-pitch-minus12" title="直接设为 -12">-12</button>
@@ -149,7 +145,6 @@
           <div class="param">
             <div class="param-label">
               <span>CFG 强度</span>
-              <span class="param-hint">classifier-free guidance 比例，越高越贴近参考音色</span>
             </div>
             <div class="param-control">
               <input type="range" id="svc-cfg" min="0" max="2" step="0.05" value="0.9">
@@ -159,7 +154,6 @@
           <div class="param">
             <div class="param-label">
               <span>Input gain</span>
-              <span class="param-hint">进入特征提取前应用到输入音频，单位 dB</span>
             </div>
             <div class="param-control">
               <input type="range" id="svc-input-gain" min="-12" max="3" step="0.5" value="-2">
@@ -169,7 +163,6 @@
           <div class="param">
             <label class="param-label" for="svc-keep-first-vocoder-output">
               <span>keep first vocoder output</span>
-              <span class="param-hint">保存未经过显式f0合成的首个Vocoder的输出</span>
             </label>
             <div class="param-control checkbox-control">
               <input type="checkbox" id="svc-keep-first-vocoder-output">
@@ -187,7 +180,6 @@
             <div class="param">
               <div class="param-label">
                 <span>视频时长</span>
-                <span class="param-hint">完整 mel spectrogram 动画时长</span>
               </div>
               <div class="param-control">
                 <input type="range" id="svc-video-duration" min="20" max="120" step="1" value="20">
@@ -197,7 +189,6 @@
             <div class="param">
               <div class="param-label">
                 <span>模拟采样倍数</span>
-                <span class="param-hint">在相邻 re-flow step 之间生成用于视频展示的中间状态</span>
               </div>
               <div class="param-control">
                 <input type="range" id="svc-video-sampling-multiplier" min="0" max="7" step="1" value="5">
@@ -249,7 +240,6 @@
           <div class="param">
             <div class="param-label">
               <span>背景图片</span>
-              <span class="param-hint">pad 填充：完整显示不变形，比例不符处补黑边</span>
             </div>
             <div class="param-control">
               <button class="step-btn" id="lrc-pick-image">选择图片</button>
@@ -259,7 +249,6 @@
           <div class="param">
             <div class="param-label">
               <span>画面比例</span>
-              <span class="param-hint">五档固定比例</span>
             </div>
             <div class="param-control">
               <input type="range" id="lrc-aspect" min="0" max="4" step="1" value="4">
@@ -269,7 +258,6 @@
           <div class="param">
             <label class="param-label" for="lrc-aspect-fit">
               <span>适应背景图片</span>
-              <span class="param-hint">画面比例跟随所选图片，固定比例滑杆停用</span>
             </label>
             <div class="param-control checkbox-control">
               <input type="checkbox" id="lrc-aspect-fit">
@@ -278,27 +266,24 @@
           <div class="param">
             <div class="param-label">
               <span>背景模糊</span>
-              <span class="param-hint">0 为完全不模糊</span>
             </div>
             <div class="param-control">
-              <input type="range" id="lrc-blur" min="0" max="20" step="0.5" value="0">
-              <span class="param-value" id="lrc-blur-value">0.0 px</span>
+              <input type="range" id="lrc-blur" min="0" max="6" step="0.1" value="1.5">
+              <span class="param-value" id="lrc-blur-value">1.5 px</span>
             </div>
           </div>
           <div class="param">
             <div class="param-label">
               <span>背景压暗</span>
-              <span class="param-hint">0 为完全不变暗，压暗可提升文字可读性</span>
             </div>
             <div class="param-control">
-              <input type="range" id="lrc-darken" min="0" max="80" step="1" value="0">
-              <span class="param-value" id="lrc-darken-value">0%</span>
+              <input type="range" id="lrc-darken" min="0" max="80" step="1" value="35">
+              <span class="param-value" id="lrc-darken-value">35%</span>
             </div>
           </div>
           <div class="param">
             <div class="param-label">
               <span>字幕锚点</span>
-              <span class="param-hint">字幕块在画面中的位置；仅居中列时文字居中，其余列靠对应侧对齐</span>
             </div>
             <div class="param-control anchor-control">
               <div class="anchor-grid" id="lrc-anchor-grid"></div>
@@ -306,12 +291,42 @@
           </div>
           <div class="param">
             <div class="param-label">
+              <span>字幕对齐</span>
+            </div>
+            <div class="param-control segmented-control">
+              <div class="segmented" id="lrc-align">
+                <button data-value="0">靠左</button>
+                <button data-value="1">居中</button>
+                <button data-value="2" class="active">靠右</button>
+              </div>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>字体</span>
+            </div>
+            <div class="param-control select-control">
+              <select id="lrc-font-family" aria-label="字体">
+                <option value="">默认（系统字体）</option>
+              </select>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
               <span>字号</span>
-              <span class="param-hint">当前行字号，以 1080p 画面为基准，相邻行自动缩小</span>
             </div>
             <div class="param-control">
-              <input type="range" id="lrc-font-size" min="28" max="96" step="1" value="52">
-              <span class="param-value" id="lrc-font-size-value">52</span>
+              <input type="range" id="lrc-font-size" min="28" max="96" step="1" value="70">
+              <span class="param-value" id="lrc-font-size-value">70</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>最后一句停留时间</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-tail-hold" min="3" max="8" step="1" value="4">
+              <span class="param-value" id="lrc-tail-hold-value">4 秒</span>
             </div>
           </div>
           <div class="param">
@@ -325,10 +340,18 @@
           <div class="param">
             <div class="param-label">
               <span>阴影</span>
-              <span class="param-hint">为文字添加柔和投影，提升复杂背景上的可读性</span>
             </div>
             <div class="param-control checkbox-control">
               <input type="checkbox" id="lrc-shadow" checked>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>阴影强度</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-shadow-strength" min="0" max="200" step="5" value="150">
+              <span class="param-value" id="lrc-shadow-strength-value">150%</span>
             </div>
           </div>
           <div class="param">

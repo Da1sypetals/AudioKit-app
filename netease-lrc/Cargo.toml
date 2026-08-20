@@ -1,0 +1,15 @@
+[package]
+name = "netease-lrc"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "netease-lrc"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.53.1", features = ["fs", "macros", "rt-multi-thread"] }

@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('audiokit', {
   runSep: (options) => ipcRenderer.invoke('job:sep', options),
   runSvc: (options) => ipcRenderer.invoke('job:svc', options),
 
+  fetchLrc: (input) => ipcRenderer.invoke('lrc:fetch', input),
+  pickImage: () => ipcRenderer.invoke('lrcvideo:pick-image'),
+  readImage: (filePath) => ipcRenderer.invoke('lrcvideo:read-image', filePath),
+  saveLrcVideo: (options) => ipcRenderer.invoke('lrcvideo:save', options),
+
   onJobEvent: (callback) => {
     const listener = (_event, msg) => callback(msg);
     ipcRenderer.on('job:event', listener);

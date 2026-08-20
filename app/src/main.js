@@ -6,6 +6,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const ffmpegStatic = require('ffmpeg-static');
+const netease = require('./netease');
 
 app.setName('AudioKit');
 app.setAboutPanelOptions({ applicationName: 'AudioKit' });
@@ -23,6 +24,7 @@ const AUDIO_EXTENSIONS = new Set([
   '.opus',
 ]);
 const VIDEO_EXTENSIONS = new Set(['.mp4']);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp']);
 const CATEGORIES = new Set(['unclassified', 'vocal', 'instrumental', 'mix']);
 
 const resourcesRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
@@ -206,6 +208,15 @@ function createOutputGroup(type, source, params, stemParts) {
 
 function stemOf(filePath) {
   return path.basename(filePath, path.extname(filePath));
+}
+
+function sanitizeFileStem(name) {
+  let out = '';
+  for (const ch of name.trim()) {
+    const code = ch.codePointAt(0);
+    out += code < 32 || '\\/:*?"<>|'.includes(ch) ? '_' : ch;
+  }
+  return out;
 }
 
 function pushFilesChanged(which) {
@@ -410,6 +421,51 @@ function registerIpc() {
 
   ipcMain.handle('file:reveal', (_event, filePath) => {
     shell.showItemInFolder(filePath);
+  });
+
+  ipcMain.handle('lrc:fetch', (_event, input) => netease.fetchSong(input));
+
+  const readImageFile = (filePath) => {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+      throw new TypeError('图片路径必须是绝对路径');
+    }
+    if (!IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
+      throw new Error(`不支持的图片格式: ${path.basename(filePath)}`);
+    }
+    if (!fs.existsSync(filePath)) throw new Error(`图片不存在: ${path.basename(filePath)}`);
+    return { name: path.basename(filePath), path: filePath, bytes: fs.readFileSync(filePath) };
+  };
+
+  ipcMain.handle('lrcvideo:pick-image', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: '图片', extensions: [...IMAGE_EXTENSIONS].map((ext) => ext.slice(1)) },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return readImageFile(result.filePaths[0]);
+  });
+
+  ipcMain.handle('lrcvideo:read-image', (_event, filePath) => readImageFile(filePath));
+
+  ipcMain.handle('lrcvideo:save', async (_event, options) => {
+    const { bytes, songName, artists, songId, width, height } = options;
+    if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+      throw new TypeError('视频数据必须是非空 Uint8Array');
+    }
+    const cleanStem = sanitizeFileStem(`${songName} - ${artists}`);
+    if (!cleanStem) throw new Error('歌曲信息为空，无法命名输出文件');
+    const groupDir = createOutputGroup(
+      'lrcvideo',
+      `${songName} - ${artists}`,
+      { songId, width, height },
+      [cleanStem, 'lrc']
+    );
+    const outputPath = path.join(groupDir, `${cleanStem}.mp4`);
+    await fs.promises.writeFile(outputPath, bytes);
+    return audioFileInfo(outputPath);
   });
 
   ipcMain.handle('job:sep', (event, options) => {

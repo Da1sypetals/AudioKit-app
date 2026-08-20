@@ -15,6 +15,9 @@
       <button class="activity" data-view="svc" title="YingMusic SVC">
         <span class="activity-label">YingMusic-SVC</span>
       </button>
+      <button class="activity" data-view="lrcvideo" title="歌词视频">
+        <span class="activity-label">歌词视频</span>
+      </button>
     </nav>
 
     <aside id="sidebar">
@@ -42,6 +45,21 @@
             <button class="icon-btn" id="svc-add-input" title="导入音频"></button>
           </div>
           <ul class="file-list" id="svc-input-list"></ul>
+        </div>
+      </div>
+
+      <div class="pane hidden" id="sidebar-lrcvideo">
+        <div class="pane-section">
+          <div class="pane-header">
+            <span>使用步骤</span>
+          </div>
+          <ol class="lrc-steps">
+            <li>粘贴网易云歌曲链接，点击「获取歌词」</li>
+            <li>在歌词列表中点击起点行，再点击终点行</li>
+            <li>选择背景图片，调整字幕锚点与样式</li>
+            <li>在预览中播放确认效果</li>
+            <li>点击「生成视频」导出 MP4</li>
+          </ol>
         </div>
       </div>
     </aside>
@@ -193,6 +211,141 @@
         <div class="section-title">输出</div>
         <div class="outputs" id="svc-outputs"></div>
       </section>
+
+      <section id="view-lrcvideo" class="hidden">
+        <header class="view-header">
+          <h1>歌词视频</h1>
+        </header>
+
+        <div class="section-title">歌曲</div>
+        <div class="lrc-url-row">
+          <input type="text" id="lrc-url" spellcheck="false"
+            placeholder="粘贴网易云歌曲链接或 ID，如 https://music.163.com/song?id=…">
+          <button class="primary-btn" id="lrc-fetch">获取歌词</button>
+        </div>
+        <div class="input-display">
+          <span id="lrc-song-info" class="input-name unset">尚未获取歌词</span>
+        </div>
+
+        <div class="section-title">选取片段</div>
+        <div class="lrc-list-wrap">
+          <ul class="lrc-list" id="lrc-list"></ul>
+        </div>
+        <div class="lrc-range-info" id="lrc-range-info">点击一句歌词设为起点，再点击一句设为终点</div>
+
+        <div class="section-title">预览</div>
+        <div class="lrc-preview-wrap">
+          <canvas id="lrc-preview" width="1280" height="720"></canvas>
+        </div>
+        <div class="lrc-preview-meta" id="lrc-preview-meta">亮框以内（含黑边）即视频输出内容</div>
+        <div class="lrc-preview-controls">
+          <button class="step-btn" id="lrc-play">播放</button>
+          <input type="range" id="lrc-scrub" min="0" max="1000" step="1" value="0">
+          <span class="param-value" id="lrc-preview-time">0:00 / 0:00</span>
+        </div>
+
+        <div class="section-title">背景与字幕样式</div>
+        <div class="params">
+          <div class="param">
+            <div class="param-label">
+              <span>背景图片</span>
+              <span class="param-hint">pad 填充：完整显示不变形，比例不符处补黑边</span>
+            </div>
+            <div class="param-control">
+              <button class="step-btn" id="lrc-pick-image">选择图片</button>
+              <span class="input-name unset" id="lrc-image-name">未选择</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>画面比例</span>
+              <span class="param-hint">五档固定比例</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-aspect" min="0" max="4" step="1" value="4">
+              <span class="param-value" id="lrc-aspect-value">16:9</span>
+            </div>
+          </div>
+          <div class="param">
+            <label class="param-label" for="lrc-aspect-fit">
+              <span>适应背景图片</span>
+              <span class="param-hint">画面比例跟随所选图片，固定比例滑杆停用</span>
+            </label>
+            <div class="param-control checkbox-control">
+              <input type="checkbox" id="lrc-aspect-fit">
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>背景模糊</span>
+              <span class="param-hint">0 为完全不模糊</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-blur" min="0" max="20" step="0.5" value="0">
+              <span class="param-value" id="lrc-blur-value">0.0 px</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>背景压暗</span>
+              <span class="param-hint">0 为完全不变暗，压暗可提升文字可读性</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-darken" min="0" max="80" step="1" value="0">
+              <span class="param-value" id="lrc-darken-value">0%</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>字幕锚点</span>
+              <span class="param-hint">字幕块在画面中的位置；仅居中列时文字居中，其余列靠对应侧对齐</span>
+            </div>
+            <div class="param-control anchor-control">
+              <div class="anchor-grid" id="lrc-anchor-grid"></div>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>字号</span>
+              <span class="param-hint">当前行字号，以 1080p 画面为基准，相邻行自动缩小</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-font-size" min="28" max="96" step="1" value="52">
+              <span class="param-value" id="lrc-font-size-value">52</span>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>文字颜色</span>
+            </div>
+            <div class="param-control color-control">
+              <input type="color" id="lrc-text-color" value="#ffffff">
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>阴影</span>
+              <span class="param-hint">为文字添加柔和投影，提升复杂背景上的可读性</span>
+            </div>
+            <div class="param-control checkbox-control">
+              <input type="checkbox" id="lrc-shadow" checked>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>阴影颜色</span>
+            </div>
+            <div class="param-control color-control">
+              <input type="color" id="lrc-shadow-color" value="#000000">
+            </div>
+          </div>
+        </div>
+
+        <button class="primary-btn" id="lrc-generate">生成视频</button>
+
+        <div class="section-title">输出</div>
+        <div class="outputs" id="lrcvideo-outputs"></div>
+      </section>
     </main>
   </div>
 
@@ -201,6 +354,8 @@
     <div id="status-progress" class="hidden"><div id="status-progress-fill"></div></div>
   </footer>
 
+  <script src="vendor/mp4-muxer.js"></script>
   <script src="renderer.js"></script>
+  <script src="lrcvideo.js"></script>
 </body>
 </html>

@@ -433,9 +433,9 @@ function renderFileList(element, files, { selectedPath, onSelect, onDelete, empt
 }
 
 function renderSidebar() {
-  const isSep = state.view === 'separation';
-  $('sidebar-separation').classList.toggle('hidden', !isSep);
-  $('sidebar-svc').classList.toggle('hidden', isSep);
+  document.querySelectorAll('#sidebar .pane').forEach((pane) => {
+    pane.classList.toggle('hidden', pane.id !== `sidebar-${state.view}`);
+  });
 
   renderFileList($('sep-input-list'), state.inputs, {
     selectedPath: state.sep.input?.path,
@@ -633,6 +633,7 @@ function renderOutputs() {
   for (const [containerId, type] of [
     ['sep-outputs', 'separation'],
     ['svc-outputs', 'svc'],
+    ['lrcvideo-outputs', 'lrcvideo'],
   ]) {
     const container = $(containerId);
     container.innerHTML = '';
@@ -762,6 +763,7 @@ function updateRunButtons() {
   $('sep-run').disabled = state.running || !state.sep.input;
   $('svc-run').disabled = state.running || !state.svc.source || !state.svc.reference;
   $('svc-run-video').disabled = state.running || !state.svc.source || !state.svc.reference;
+  if (typeof updateLrcGenerateButton === 'function') updateLrcGenerateButton();
 }
 
 /* ---------------- timbre rename ---------------- */
@@ -867,8 +869,9 @@ function switchView(view) {
   document.querySelectorAll('.activity').forEach((button) => {
     button.classList.toggle('active', button.dataset.view === view);
   });
-  $('view-separation').classList.toggle('hidden', view !== 'separation');
-  $('view-svc').classList.toggle('hidden', view !== 'svc');
+  document.querySelectorAll('#content > section').forEach((section) => {
+    section.classList.toggle('hidden', section.id !== `view-${view}`);
+  });
   renderSidebar();
 }
 

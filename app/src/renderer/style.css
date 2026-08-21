@@ -909,6 +909,35 @@ body {
   min-height: 18px;
 }
 
+/* 参数区静态两列：列内容写死在 HTML 中，锚点高块与四个单行同列，使较高列尽量矮 */
+.params-cols {
+  display: flex;
+  flex-direction: column;
+}
+
+.params-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+@media (min-width: 1241px) {
+  #view-lrcvideo .params-cols {
+    flex-direction: row;
+    gap: 36px;
+    align-items: flex-start;
+  }
+
+  #view-lrcvideo .params-col {
+    flex: 1;
+    min-width: 0;
+  }
+
+  #view-lrcvideo .param-label {
+    min-width: 140px;
+  }
+}
+
 .lrc-preview-wrap {
   background: #0a0c12;
   border-radius: 6px;

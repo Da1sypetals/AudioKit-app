@@ -594,8 +594,8 @@ function registerIpc() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: 1440,
+    height: 900,
     minWidth: 980,
     minHeight: 600,
     backgroundColor: '#ffffff',

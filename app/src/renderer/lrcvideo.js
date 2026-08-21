@@ -30,6 +30,8 @@ const lrcState = {
   anchor: 51, // 9x7 锚点，默认靠下排偏右
   align: 2, // 字幕对齐：0 靠左 / 1 居中 / 2 靠右，随锚点联动也可单独调整
   fontSize: 70,
+  lineSpacing: 1.0, // 行间距倍数：1.0 = 行高 1.4 倍字号
+  letterSpacing: 1.0, // 字间距倍数：1.0 = 0.03 倍字号空隙（初始设计效果）
   textColor: '#ffffff',
   shadow: true,
   shadowColor: '#000000',
@@ -210,6 +212,8 @@ function buildScene() {
       align: lrcState.align,
       fontStack: lrcState.fontFamily ? `"${lrcState.fontFamily}", ${LRC_FONT_STACK}` : LRC_FONT_STACK,
       fontSize: lrcState.fontSize,
+      lineSpacing: lrcState.lineSpacing,
+      letterSpacing: lrcState.letterSpacing,
       textColor: lrcState.textColor,
       shadow: lrcState.shadow,
       shadowColor: lrcState.shadowColor,
@@ -245,6 +249,22 @@ function applyTextShadow(ctx, style, size) {
   ctx.shadowColor = hexWithAlpha(style.shadowColor, 0.85);
   ctx.shadowBlur = size * 0.3 * k;
   ctx.shadowOffsetY = size * 0.045 * k;
+}
+
+// 字体固有间隙（字怀）比例：advance 减去字形墨水宽度，按 100px 字号测量一次并缓存
+// 字间距语义：视觉间隙 = x × (固有间隙 + 0.03 倍字号)，x=0 字身相贴，x=1 为初始设计效果
+const fontGapCache = new Map();
+
+function measureFontGapRatio(stack) {
+  if (fontGapCache.has(stack)) return fontGapCache.get(stack);
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `400 100px ${stack}`;
+  ctx.letterSpacing = '0px';
+  const m = ctx.measureText('永');
+  const ink = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+  const ratio = Math.max(0, (m.width - ink) / 100);
+  fontGapCache.set(stack, ratio);
+  return ratio;
 }
 
 // 长行按可用宽度等比缩小字号，避免溢出画面
@@ -288,8 +308,9 @@ function drawScene(ctx, scene, t) {
   }
 
   const S = style.fontSize * (Math.min(w, h) / 1080);
-  const lineHeight = S * 2.0;
-  ctx.letterSpacing = `${(S * 0.03).toFixed(1)}px`;
+  const lineHeight = S * 1.4 * style.lineSpacing;
+  const gapRatio = measureFontGapRatio(style.fontStack);
+  ctx.letterSpacing = `${(S * (style.letterSpacing * (gapRatio + 0.03) - gapRatio)).toFixed(1)}px`;
 
   // 标题卡：片头展示歌名与歌手
   if (leadIn >= 1.2 && t < leadIn - 0.1) {
@@ -787,6 +808,24 @@ function setupLrcParams() {
   tailHold.addEventListener('input', () => {
     lrcState.tailHold = parseInt(tailHold.value, 10);
     tailHoldValue.textContent = `${tailHold.value} 秒`;
+    markSceneDirty();
+  });
+
+  const lineSpacing = $('lrc-line-spacing');
+  const lineSpacingValue = $('lrc-line-spacing-value');
+  lineSpacing.value = lrcState.lineSpacing;
+  lineSpacing.addEventListener('input', () => {
+    lrcState.lineSpacing = parseFloat(lineSpacing.value);
+    lineSpacingValue.textContent = `${parseFloat(lineSpacing.value).toFixed(1)}x`;
+    markSceneDirty();
+  });
+
+  const letterSpacing = $('lrc-letter-spacing');
+  const letterSpacingValue = $('lrc-letter-spacing-value');
+  letterSpacing.value = lrcState.letterSpacing;
+  letterSpacing.addEventListener('input', () => {
+    lrcState.letterSpacing = parseFloat(letterSpacing.value);
+    letterSpacingValue.textContent = `${parseFloat(letterSpacing.value).toFixed(2)}x`;
     markSceneDirty();
   });
 

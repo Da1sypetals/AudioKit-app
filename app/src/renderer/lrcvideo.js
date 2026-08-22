@@ -42,6 +42,8 @@ const lrcState = {
   aspectFit: false,
   tailHold: 4, // 最后一句结束后完整停留秒数，之后才开始淡出
   fontFamily: '', // 空 = 默认系统字体栈
+  creator: '', // 创作者标注，空则不显示
+  creatorPos: 0, // 6 位置：0 左上 1 上方 2 右上 3 左下 4 下方 5 右下
   playing: false,
   playT: 0,
   playStart: 0,
@@ -218,6 +220,8 @@ function buildScene() {
       shadow: lrcState.shadow,
       shadowColor: lrcState.shadowColor,
       shadowStrength: lrcState.shadowStrength,
+      creator: lrcState.creator,
+      creatorPos: lrcState.creatorPos,
     },
   };
 }
@@ -375,6 +379,24 @@ function drawScene(ctx, scene, t) {
     ctx.fillText(lines[j].text, textX, focusY + d * lineHeight);
   }
   ctx.restore();
+
+  // 创作者标注：字号与未播放歌词一致，贴紧所选边缘
+  if (style.creator) {
+    const cs = S * 0.66;
+    const col = style.creatorPos % 3;
+    const row = Math.floor(style.creatorPos / 3);
+    const mx = w * 0.03;
+    const my = h * 0.035;
+    ctx.save();
+    ctx.font = `500 ${cs.toFixed(1)}px ${style.fontStack}`;
+    ctx.textAlign = ['left', 'center', 'right'][col];
+    ctx.textBaseline = row === 0 ? 'top' : 'bottom';
+    ctx.fillStyle = style.textColor;
+    ctx.globalAlpha = 0.72;
+    applyTextShadow(ctx, style, cs);
+    ctx.fillText(style.creator, col === 0 ? mx : col === 1 ? w / 2 : w - mx, row === 0 ? my : h - my);
+    ctx.restore();
+  }
 
   // 首尾淡入淡出
   const fade = Math.min(clamp01(t / LRC_FADE_IN), clamp01((duration - t) / LRC_FADE_OUT));
@@ -891,6 +913,26 @@ function setupLrcParams() {
       markSceneDirty();
     });
     grid.appendChild(button);
+  }
+
+  const creatorInput = $('lrc-creator');
+  creatorInput.addEventListener('input', () => {
+    lrcState.creator = creatorInput.value.trim();
+    markSceneDirty();
+  });
+
+  const CREATOR_POS_LABELS = ['左上', '上方', '右上', '左下', '下方', '右下'];
+  const posGrid = $('lrc-creator-pos');
+  for (let i = 0; i < 6; i += 1) {
+    const button = document.createElement('button');
+    button.title = CREATOR_POS_LABELS[i];
+    if (i === lrcState.creatorPos) button.classList.add('active');
+    button.addEventListener('click', () => {
+      lrcState.creatorPos = i;
+      posGrid.querySelectorAll('button').forEach((el, j) => el.classList.toggle('active', j === i));
+      markSceneDirty();
+    });
+    posGrid.appendChild(button);
   }
 }
 

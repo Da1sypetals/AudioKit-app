@@ -1043,6 +1043,29 @@ body {
   background: #fff;
 }
 
+/* 创作者位置：3 列 2 行点阵 */
+.pos-grid {
+  grid-template-columns: repeat(3, 20px);
+  grid-template-rows: repeat(2, 20px);
+}
+
+.param-control .text-input {
+  flex: 1;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.param-control .text-input:focus {
+  border-color: var(--accent);
+}
+
 .segmented-control {
   justify-content: flex-end;
 }

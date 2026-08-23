@@ -29,7 +29,7 @@ const lrcState = {
   image: null, // { bitmap, name, width, height }
   anchor: 51, // 9x7 锚点，默认靠下排偏右
   align: 2, // 字幕对齐：0 靠左 / 1 居中 / 2 靠右，随锚点联动也可单独调整
-  fontSize: 70,
+  fontSize: 90,
   lineSpacing: 1.0, // 行间距倍数：1.0 = 行高 1.4 倍字号
   letterSpacing: 1.0, // 字间距倍数：1.0 = 0.03 倍字号空隙（初始设计效果）
   textColor: '#ffffff',
@@ -41,9 +41,9 @@ const lrcState = {
   aspectIndex: 4, // 默认 16:9
   aspectFit: false,
   tailHold: 4, // 最后一句结束后完整停留秒数，之后才开始淡出
-  fontFamily: '', // 空 = 默认系统字体栈
+  fontFamily: '我欲见你何惧春秋', // 空 = 默认系统字体栈；字体文件缺失时回退为 ''
   creator: '', // 创作者标注，空则不显示
-  creatorPos: 0, // 6 位置：0 左上 1 上方 2 右上 3 左下 4 下方 5 右下
+  creatorPos: 4, // 6 位置：0 左上 1 上方 2 右上 3 左下 4 下方 5 右下
   playing: false,
   playT: 0,
   playStart: 0,
@@ -314,7 +314,8 @@ function drawScene(ctx, scene, t) {
   const S = style.fontSize * (Math.min(w, h) / 1080);
   const lineHeight = S * 1.4 * style.lineSpacing;
   const gapRatio = measureFontGapRatio(style.fontStack);
-  ctx.letterSpacing = `${(S * (style.letterSpacing * (gapRatio + 0.03) - gapRatio)).toFixed(1)}px`;
+  // 字间距基准：1.0x = 早期版本 0.6x 的绝对空隙，0x = 字符相贴
+  ctx.letterSpacing = `${(S * (style.letterSpacing * 0.6 * (gapRatio + 0.03) - gapRatio)).toFixed(1)}px`;
 
   // 标题卡：片头展示歌名与歌手
   if (leadIn >= 1.2 && t < leadIn - 0.1) {
@@ -385,8 +386,8 @@ function drawScene(ctx, scene, t) {
     const cs = S * 0.66;
     const col = style.creatorPos % 3;
     const row = Math.floor(style.creatorPos / 3);
-    const mx = w * 0.03;
-    const my = h * 0.035;
+    const mx = w * 0.015;
+    const my = h * 0.0175;
     ctx.save();
     ctx.font = `500 ${cs.toFixed(1)}px ${style.fontStack}`;
     ctx.textAlign = ['left', 'center', 'right'][col];
@@ -961,6 +962,16 @@ async function setupFontSelect() {
     option.value = file;
     option.textContent = file.replace(/\.[^.]+$/, '');
     select.appendChild(option);
+  }
+  // 默认字体：文件缺失或加载失败时回退系统默认字体栈
+  if (lrcState.fontFamily) {
+    const file = files.find((f) => f.replace(/\.[^.]+$/, '') === lrcState.fontFamily);
+    if (file) {
+      select.value = file;
+      await loadLrcFont(file);
+    } else {
+      lrcState.fontFamily = '';
+    }
   }
 }
 

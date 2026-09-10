@@ -18,6 +18,9 @@
       <button class="activity" data-view="lrcvideo" title="歌词视频">
         <span class="activity-label">歌词视频</span>
       </button>
+      <button class="activity" data-view="lrccover" title="歌词封面">
+        <span class="activity-label">歌词封面</span>
+      </button>
     </nav>
 
     <aside id="sidebar">
@@ -59,6 +62,21 @@
             <li>选择背景图片，调整字幕锚点与样式</li>
             <li>在预览中播放确认效果</li>
             <li>点击「生成视频」导出 MP4</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="pane hidden" id="sidebar-lrccover">
+        <div class="pane-section">
+          <div class="pane-header">
+            <span>使用步骤</span>
+          </div>
+          <ol class="lrc-steps">
+            <li>点击「选择图片」导入背景图片</li>
+            <li>在文字框中输入封面文字，支持多行</li>
+            <li>调整锚点、对齐、字体、阴影与创作者</li>
+            <li>在预览中确认效果</li>
+            <li>点击「生成图片」导出 PNG 或 JPEG</li>
           </ol>
         </div>
       </div>
@@ -407,6 +425,186 @@
         <div class="section-title">输出</div>
         <div class="outputs" id="lrcvideo-outputs"></div>
       </section>
+
+      <section id="view-lrccover" class="hidden">
+        <header class="view-header">
+          <h1>歌词封面</h1>
+        </header>
+
+        <div class="section-title">预览</div>
+        <div class="lrc-preview-wrap">
+          <canvas id="lrc-cover-preview" width="1280" height="720"></canvas>
+        </div>
+        <div class="lrc-preview-meta" id="lrc-cover-preview-meta">选择背景图片后在此预览</div>
+
+        <div class="section-title">参数</div>
+        <div class="params">
+          <div class="param">
+            <div class="param-label">
+              <span>背景图片</span>
+            </div>
+            <div class="param-control">
+              <button class="step-btn" id="lrc-cover-pick-image">选择图片</button>
+              <span class="input-name unset" id="lrc-cover-image-name">未选择</span>
+            </div>
+          </div>
+          <div class="param cover-text-param">
+            <div class="param-label">
+              <span>文字内容</span>
+            </div>
+            <div class="param-control cover-text-pair">
+              <div class="cover-text-col">
+                <span class="cover-text-caption">主要</span>
+                <textarea id="lrc-cover-text" class="cover-text-input" spellcheck="false"
+                  placeholder="主要文字内容，可多行"></textarea>
+              </div>
+              <div class="cover-text-col">
+                <span class="cover-text-caption">次要</span>
+                <textarea id="lrc-cover-subtext" class="cover-text-input" spellcheck="false"
+                  placeholder="次要文字内容，显示在下方"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="param">
+            <div class="param-label">
+              <span>次要文字大小倍数</span>
+            </div>
+            <div class="param-control">
+              <input type="range" id="lrc-cover-subscale" min="0.1" max="1.2" step="0.01" value="0.4">
+              <span class="param-value" id="lrc-cover-subscale-value">0.40x</span>
+            </div>
+          </div>
+        </div>
+        <div class="params-cols">
+          <div class="params-col">
+            <div class="param">
+              <div class="param-label">
+                <span>文字颜色</span>
+              </div>
+              <div class="param-control color-control">
+                <input type="color" id="lrc-cover-text-color" value="#ffffff">
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>文字透明度</span>
+                <span class="param-hint">0为不透明</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-text-transparency" min="0" max="1" step="0.01" value="0.08">
+                <span class="param-value" id="lrc-cover-text-transparency-value">0.08</span>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>阴影</span>
+              </div>
+              <div class="param-control checkbox-control">
+                <input type="checkbox" id="lrc-cover-shadow" checked>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>阴影强度</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-shadow-strength" min="0" max="200" step="5" value="150">
+                <span class="param-value" id="lrc-cover-shadow-strength-value">150%</span>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>阴影颜色</span>
+              </div>
+              <div class="param-control color-control">
+                <input type="color" id="lrc-cover-shadow-color" value="#000000">
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>输出格式</span>
+              </div>
+              <div class="param-control segmented-control">
+                <div class="segmented" id="lrc-cover-format">
+                  <button data-value="png" class="active">PNG</button>
+                  <button data-value="jpeg">JPEG</button>
+                </div>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>创作者：文字位置</span>
+              </div>
+              <div class="param-control anchor-control">
+                <div class="anchor-grid pos-grid" id="lrc-cover-creator-pos"></div>
+              </div>
+            </div>
+          </div>
+          <div class="params-col">
+            <div class="param">
+              <div class="param-label">
+                <span>字幕锚点</span>
+              </div>
+              <div class="param-control anchor-control">
+                <div class="anchor-grid" id="lrc-cover-anchor-grid"></div>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>字幕对齐</span>
+              </div>
+              <div class="param-control segmented-control">
+                <div class="segmented" id="lrc-cover-align">
+                  <button data-value="0">靠左</button>
+                  <button data-value="1" class="active">居中</button>
+                  <button data-value="2">靠右</button>
+                </div>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>字体</span>
+              </div>
+              <div class="param-control select-control">
+                <select id="lrc-cover-font-family" aria-label="字体">
+                  <option value="">默认（系统字体）</option>
+                </select>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>字号</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-font-size" min="48" max="144" step="1" value="90">
+                <span class="param-value" id="lrc-cover-font-size-value">90</span>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>行间距</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-line-spacing" min="0.3" max="1.5" step="0.1" value="1.0">
+                <span class="param-value" id="lrc-cover-line-spacing-value">1.0x</span>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>创作者</span>
+              </div>
+              <div class="param-control">
+                <input type="text" id="lrc-cover-creator" class="text-input" spellcheck="false" placeholder="留空则不显示">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="primary-btn" id="lrc-cover-generate">生成图片</button>
+
+        <div class="section-title">输出</div>
+        <div class="outputs" id="lrccover-outputs"></div>
+      </section>
     </main>
   </div>
 
@@ -418,5 +616,6 @@
   <script src="vendor/mp4-muxer.js"></script>
   <script src="renderer.js"></script>
   <script src="lrcvideo.js"></script>
+  <script src="lrccover.js"></script>
 </body>
 </html>

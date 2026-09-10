@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('audiokit', {
   readImage: (filePath) => ipcRenderer.invoke('lrcvideo:read-image', filePath),
   listFonts: () => ipcRenderer.invoke('lrcvideo:list-fonts'),
   saveLrcVideo: (options) => ipcRenderer.invoke('lrcvideo:save', options),
+  saveLrcCover: (options) => ipcRenderer.invoke('lrccover:save', options),
 
   onJobEvent: (callback) => {
     const listener = (_event, msg) => callback(msg);

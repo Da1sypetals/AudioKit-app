@@ -634,6 +634,7 @@ function renderOutputs() {
     ['sep-outputs', 'separation'],
     ['svc-outputs', 'svc'],
     ['lrcvideo-outputs', 'lrcvideo'],
+    ['lrccover-outputs', 'lrccover'],
   ]) {
     const container = $(containerId);
     container.innerHTML = '';
@@ -702,7 +703,7 @@ function renderOutputs() {
         } else {
           const kind = document.createElement('span');
           kind.className = 'media-kind';
-          kind.textContent = 'MP4';
+          kind.textContent = file.name.slice(file.name.lastIndexOf('.') + 1).toUpperCase();
           row.appendChild(kind);
         }
 
@@ -764,6 +765,7 @@ function updateRunButtons() {
   $('svc-run').disabled = state.running || !state.svc.source || !state.svc.reference;
   $('svc-run-video').disabled = state.running || !state.svc.source || !state.svc.reference;
   if (typeof updateLrcGenerateButton === 'function') updateLrcGenerateButton();
+  if (typeof updateLrcCoverGenerateButton === 'function') updateLrcCoverGenerateButton();
 }
 
 /* ---------------- timbre rename ---------------- */

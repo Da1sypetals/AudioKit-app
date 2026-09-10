@@ -101,8 +101,12 @@ function isVideoFile(filePath) {
   return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+function isImageFile(filePath) {
+  return IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
 function isOutputMediaFile(filePath) {
-  return isAudioFile(filePath) || isVideoFile(filePath);
+  return isAudioFile(filePath) || isVideoFile(filePath) || isImageFile(filePath);
 }
 
 function timestamp() {
@@ -150,7 +154,7 @@ function audioFileInfo(filePath) {
     url: pathToFileURL(filePath).href,
     size: stat.size,
     mtime: stat.mtimeMs,
-    kind: isVideoFile(filePath) ? 'video' : 'audio',
+    kind: isVideoFile(filePath) ? 'video' : isImageFile(filePath) ? 'image' : 'audio',
     category: readCategory(filePath),
   };
 }
@@ -474,6 +478,23 @@ function registerIpc() {
       [cleanStem, 'lrc']
     );
     const outputPath = path.join(groupDir, `${cleanStem}.mp4`);
+    await fs.promises.writeFile(outputPath, bytes);
+    return audioFileInfo(outputPath);
+  });
+
+  ipcMain.handle('lrccover:save', async (_event, options) => {
+    const { bytes, format, title } = options;
+    if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+      throw new TypeError('封面数据必须是非空 Uint8Array');
+    }
+    if (!['png', 'jpeg'].includes(format)) {
+      throw new RangeError(`封面格式必须是 png 或 jpeg: ${format}`);
+    }
+    const source = String(title || '').trim();
+    const cleanStem = source ? sanitizeFileStem(source).slice(0, 40) : '';
+    const stem = cleanStem || 'cover';
+    const groupDir = createOutputGroup('lrccover', source, { format }, [stem, 'cover']);
+    const outputPath = path.join(groupDir, `${stem}.${format === 'jpeg' ? 'jpg' : 'png'}`);
     await fs.promises.writeFile(outputPath, bytes);
     return audioFileInfo(outputPath);
   });

@@ -261,6 +261,41 @@ async function selectCoverImage({ bytes, name }) {
   renderCoverPreview();
 }
 
+// 把图片文件拖到预览外框上即可换背景：外框任意位置都行，不必落在绿框内的画布上
+async function dropCoverImage(file) {
+  const filePath = api.getPathForFile(file);
+  if (!filePath) {
+    setStatus('无法读取拖入文件的路径', true);
+    return;
+  }
+  try {
+    const result = await api.readImage(filePath);
+    await selectCoverImage(result);
+    setStatus(`已载入背景图片 ${result.name}`);
+  } catch (error) {
+    setStatus(`载入背景图片失败: ${error.message}`, true);
+  }
+}
+
+function setupCoverImageDrop() {
+  const wrap = $('lrc-cover-preview-wrap');
+  wrap.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    wrap.classList.add('dragover');
+  });
+  wrap.addEventListener('dragleave', () => wrap.classList.remove('dragover'));
+  wrap.addEventListener('drop', (event) => {
+    event.preventDefault();
+    wrap.classList.remove('dragover');
+    const files = [...event.dataTransfer.files];
+    if (files.length > 0) void dropCoverImage(files[0]);
+  });
+
+  // 拖到预览框以外时，阻止浏览器默认的文件导航，避免页面被替换成图片
+  document.addEventListener('dragover', (event) => event.preventDefault());
+  document.addEventListener('drop', (event) => event.preventDefault());
+}
+
 // 模糊需要重烘背景底板，拖动滑杆时防抖重建
 let coverPlateTimer = null;
 
@@ -446,6 +481,7 @@ function initLrccover() {
   });
   $('lrc-cover-generate').addEventListener('click', generateCover);
   setupCoverParams();
+  setupCoverImageDrop();
   setupCoverFontSelect();
   renderCoverPreview();
 }

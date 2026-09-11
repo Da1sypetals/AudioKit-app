@@ -963,6 +963,11 @@ body {
   outline: 1.5px solid #3dff6e;
 }
 
+/* 歌词封面：把图片拖到预览外框上时高亮 */
+.lrc-preview-wrap.dragover {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
 .lrc-preview-meta {
   margin-top: 6px;
   font-size: 12px;

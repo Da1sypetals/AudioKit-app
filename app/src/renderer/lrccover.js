@@ -290,10 +290,6 @@ function setupCoverImageDrop() {
     const files = [...event.dataTransfer.files];
     if (files.length > 0) void dropCoverImage(files[0]);
   });
-
-  // 拖到预览框以外时，阻止浏览器默认的文件导航，避免页面被替换成图片
-  document.addEventListener('dragover', (event) => event.preventDefault());
-  document.addEventListener('drop', (event) => event.preventDefault());
 }
 
 // 模糊需要重烘背景底板，拖动滑杆时防抖重建

@@ -1196,6 +1196,17 @@ function setupSidebarActions() {
   });
 }
 
+function setupFileDragGuard() {
+  // 拖入文件时阻止浏览器默认导航，避免投放区以外的地方把页面替换成文件内容
+  const hasFiles = (event) => [...event.dataTransfer.types].includes('Files');
+  document.addEventListener('dragover', (event) => {
+    if (hasFiles(event)) event.preventDefault();
+  });
+  document.addEventListener('drop', (event) => {
+    if (hasFiles(event)) event.preventDefault();
+  });
+}
+
 function init() {
   document.querySelectorAll('.activity').forEach((button) => {
     button.addEventListener('click', () => switchView(button.dataset.view));
@@ -1206,6 +1217,7 @@ function init() {
   setupTimbreRename();
   setupSeekGlobal();
   setupFilesChanged();
+  setupFileDragGuard();
   document.addEventListener('click', closeCategoryMenu);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeCategoryMenu();

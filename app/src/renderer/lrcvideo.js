@@ -770,6 +770,37 @@ async function selectLrcImage({ bytes, name }) {
   updateLrcGenerateButton();
 }
 
+// 把图片文件拖到预览外框上即可换背景：外框任意位置都行，不必落在绿框内的画布上
+async function dropLrcImage(file) {
+  const filePath = api.getPathForFile(file);
+  if (!filePath) {
+    setStatus('无法读取拖入文件的路径', true);
+    return;
+  }
+  try {
+    const result = await api.readImage(filePath);
+    await selectLrcImage(result);
+    setStatus(`已载入背景图片 ${result.name}`);
+  } catch (error) {
+    setStatus(`载入背景图片失败: ${error.message}`, true);
+  }
+}
+
+function setupLrcImageDrop() {
+  const wrap = $('lrc-preview-wrap');
+  wrap.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    wrap.classList.add('dragover');
+  });
+  wrap.addEventListener('dragleave', () => wrap.classList.remove('dragover'));
+  wrap.addEventListener('drop', (event) => {
+    event.preventDefault();
+    wrap.classList.remove('dragover');
+    const files = [...event.dataTransfer.files];
+    if (files.length > 0) void dropLrcImage(files[0]);
+  });
+}
+
 function markSceneDirty() {
   lrcState.sceneDirty = true;
   renderPreview();
@@ -998,6 +1029,7 @@ function initLrcvideo() {
   });
   $('lrc-generate').addEventListener('click', generateVideo);
   setupLrcParams();
+  setupLrcImageDrop();
   setupFontSelect();
   renderLrcList();
   renderPreview();

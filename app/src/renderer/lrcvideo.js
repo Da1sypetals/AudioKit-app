@@ -317,22 +317,20 @@ function drawScene(ctx, scene, t) {
   // 字间距基准：1.0x = 早期版本 0.6x 的绝对空隙，0x = 字符相贴
   ctx.letterSpacing = `${(S * (style.letterSpacing * 0.6 * (gapRatio + 0.03) - gapRatio)).toFixed(1)}px`;
 
-  // 标题卡：片头展示歌名与歌手
+  // 标题卡：片头展示歌名，按墨迹包围盒在画面正中精确居中
   if (leadIn >= 1.2 && t < leadIn - 0.1) {
     const alpha = Math.min(clamp01((t - 0.15) / 0.5), clamp01((leadIn - 0.45 - t) / 0.45));
     if (alpha > 0) {
       ctx.save();
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      applyTextShadow(ctx, style, S);
+      ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = style.textColor;
       ctx.globalAlpha = alpha;
       const nameSize = fitFont(ctx, song.name, 600, S * 1.02, w * 0.8, style.fontStack);
       applyTextShadow(ctx, style, nameSize);
-      ctx.fillText(song.name, w / 2, h / 2 - S * 0.42);
-      ctx.globalAlpha = alpha * 0.72;
-      fitFont(ctx, song.artists, 400, S * 0.44, w * 0.7, style.fontStack);
-      ctx.fillText(song.artists, w / 2, h / 2 + S * 0.62);
+      const metrics = ctx.measureText(song.name);
+      const inkCenterOffset = (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+      ctx.fillText(song.name, w / 2, h / 2 + inkCenterOffset);
       ctx.restore();
     }
   }

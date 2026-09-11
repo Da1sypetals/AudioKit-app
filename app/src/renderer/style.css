@@ -1057,7 +1057,7 @@ body {
   grid-template-rows: repeat(2, 20px);
 }
 
-/* 歌词封面：主要/次要文字框左右并排，顶部对齐 */
+/* 歌词封面文字框：标签贴顶，文本框占满所在栏 */
 .cover-text-param {
   align-items: flex-start;
 }
@@ -1066,24 +1066,8 @@ body {
   padding-top: 6px;
 }
 
-.cover-text-pair {
-  display: flex;
-  gap: 12px;
+.cover-text-param .param-control {
   max-width: none;
-  align-items: stretch;
-}
-
-.cover-text-col {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.cover-text-caption {
-  font-size: 11px;
-  color: var(--fg-dim);
 }
 
 .cover-text-input {

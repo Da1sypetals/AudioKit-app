@@ -4,9 +4,12 @@ const COVER_PREVIEW_MAX = 1400; // 预览画布最长边上限，导出始终按
 
 const coverState = {
   image: null, // { bitmap, name, width, height }
+  blur: 0.8, // 背景模糊，单位为输出画面像素
+  darken: 20, // 背景压暗百分比
+  saturation: 100, // 背景饱和度百分比，100 为原图
   text: '',
   subText: '',
-  subScale: 0.4, // 次要文字字号 = 主要文字字号 × 倍数
+  subScale: 0.45, // 次要文字字号 = 主要文字字号 × 倍数
   anchor: 31, // 9x7 锚点，默认正中（行 3 列 4）
   align: 1, // 0 靠左 / 1 居中 / 2 靠右
   fontSize: 90,
@@ -17,8 +20,6 @@ const coverState = {
   shadowColor: '#000000',
   shadowStrength: 150, // 百分比，100 为初始设计效果
   fontFamily: '我欲见你何惧春秋', // 空 = 默认系统字体栈
-  creator: '',
-  creatorPos: 4, // 6 位置：0 左上 1 上方 2 右上 3 左下 4 下方 5 右下
   format: 'png',
   generating: false,
 };
@@ -52,8 +53,6 @@ function coverStyle() {
     shadowStrength: coverState.shadowStrength,
     anchor: coverState.anchor,
     align: coverState.align,
-    creator: coverState.creator,
-    creatorPos: coverState.creatorPos,
   };
 }
 
@@ -103,29 +102,61 @@ function drawCoverText(ctx, w, h, style, lines) {
     }
     ctx.restore();
   }
+}
 
-  // 创作者标注：字号与封面正文同比例缩小，贴紧所选边缘
-  if (style.creator) {
-    const cs = S * 0.66;
-    const col = style.creatorPos % 3;
-    const row = Math.floor(style.creatorPos / 3);
-    const mx = w * 0.015;
-    const my = h * 0.0175;
-    ctx.save();
-    ctx.font = `500 ${cs.toFixed(1)}px ${style.fontStack}`;
-    ctx.textAlign = ['left', 'center', 'right'][col];
-    ctx.textBaseline = row === 0 ? 'top' : 'bottom';
-    ctx.fillStyle = style.textColor;
-    ctx.globalAlpha = 0.72 * style.textAlpha;
-    applyTextShadow(ctx, style, cs);
-    ctx.fillText(style.creator, col === 0 ? mx : col === 1 ? w / 2 : w - mx, row === 0 ? my : h - my);
-    ctx.restore();
+let coverPlate = null; // { image, blur, saturation, canvas } 背景底板缓存
+
+function coverPlateCanvas() {
+  const image = coverState.image;
+  const blur = coverState.blur;
+  const saturation = coverState.saturation;
+  if (
+    coverPlate &&
+    coverPlate.image === image &&
+    coverPlate.blur === blur &&
+    coverPlate.saturation === saturation
+  ) {
+    return coverPlate.canvas;
   }
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d');
+  const filters = [];
+  if (blur > 0) filters.push(`blur(${blur}px)`);
+  if (saturation !== 100) filters.push(`saturate(${(saturation / 100).toFixed(3)})`);
+  if (filters.length > 0) {
+    // 模糊会向画面外取样，绘制时外扩，避免边缘发虚
+    const pad = blur > 0 ? Math.ceil(blur * 3) : 0;
+    ctx.filter = filters.join(' ');
+    ctx.drawImage(image.bitmap, -pad, -pad, image.width + pad * 2, image.height + pad * 2);
+    ctx.filter = 'none';
+  } else {
+    ctx.drawImage(image.bitmap, 0, 0, image.width, image.height);
+  }
+  coverPlate = { image, blur, saturation, canvas };
+  return canvas;
 }
 
 function drawCover(ctx, w, h) {
   ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(coverState.image.bitmap, 0, 0, w, h);
+  ctx.drawImage(coverPlateCanvas(), 0, 0, w, h);
+
+  // 压暗：整体压暗 + 随压暗强度递增的暗角，压暗为 0 时完全不加
+  const darkenAlpha = coverState.darken / 100;
+  if (darkenAlpha > 0) {
+    ctx.fillStyle = `rgba(8, 10, 18, ${darkenAlpha.toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
+    const gradient = ctx.createRadialGradient(
+      w / 2, h / 2, Math.hypot(w, h) * 0.36,
+      w / 2, h / 2, Math.hypot(w, h) * 0.72
+    );
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradient.addColorStop(1, `rgba(0, 0, 0, ${(darkenAlpha * 0.83).toFixed(3)})`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+  }
+
   drawCoverText(ctx, w, h, coverStyle(), coverLines());
 }
 
@@ -223,10 +254,22 @@ function updateLrcCoverGenerateButton() {
 async function selectCoverImage({ bytes, name }) {
   const bitmap = await createImageBitmap(new Blob([bytes]));
   coverState.image = { bitmap, name, width: bitmap.width, height: bitmap.height };
+  coverPlate = null;
   const nameEl = $('lrc-cover-image-name');
   nameEl.textContent = `${name}（${bitmap.width}×${bitmap.height}）`;
   nameEl.classList.remove('unset');
   renderCoverPreview();
+}
+
+// 模糊需要重烘背景底板，拖动滑杆时防抖重建
+let coverPlateTimer = null;
+
+function markCoverPlateDirty() {
+  if (coverPlateTimer) clearTimeout(coverPlateTimer);
+  coverPlateTimer = setTimeout(() => {
+    coverPlateTimer = null;
+    renderCoverPreview();
+  }, 120);
 }
 
 function setupCoverAnchorGrid(updateAlignUI) {
@@ -240,22 +283,6 @@ function setupCoverAnchorGrid(updateAlignUI) {
       // 锚点联动默认对齐，用户仍可单独调整
       coverState.align = anchorAlign(i);
       updateAlignUI();
-      grid.querySelectorAll('button').forEach((el, j) => el.classList.toggle('active', j === i));
-      renderCoverPreview();
-    });
-    grid.appendChild(button);
-  }
-}
-
-function setupCoverCreatorPos() {
-  const labels = ['左上', '上方', '右上', '左下', '下方', '右下'];
-  const grid = $('lrc-cover-creator-pos');
-  for (let i = 0; i < 6; i += 1) {
-    const button = document.createElement('button');
-    button.title = labels[i];
-    if (i === coverState.creatorPos) button.classList.add('active');
-    button.addEventListener('click', () => {
-      coverState.creatorPos = i;
       grid.querySelectorAll('button').forEach((el, j) => el.classList.toggle('active', j === i));
       renderCoverPreview();
     });
@@ -315,11 +342,35 @@ function setupCoverParams() {
     renderCoverPreview();
   });
 
+  const blur = $('lrc-cover-blur');
+  blur.value = coverState.blur;
+  blur.addEventListener('input', () => {
+    coverState.blur = parseFloat(blur.value);
+    $('lrc-cover-blur-value').textContent = `${coverState.blur.toFixed(1)} px`;
+    markCoverPlateDirty();
+  });
+
+  const darken = $('lrc-cover-darken');
+  darken.value = coverState.darken;
+  darken.addEventListener('input', () => {
+    coverState.darken = parseInt(darken.value, 10);
+    $('lrc-cover-darken-value').textContent = `${coverState.darken}%`;
+    renderCoverPreview();
+  });
+
+  const saturation = $('lrc-cover-saturation');
+  saturation.value = coverState.saturation;
+  saturation.addEventListener('input', () => {
+    coverState.saturation = parseInt(saturation.value, 10);
+    $('lrc-cover-saturation-value').textContent = `${coverState.saturation}%`;
+    markCoverPlateDirty();
+  });
+
   const textTransparency = $('lrc-cover-text-transparency');
   textTransparency.value = coverState.textTransparency;
   textTransparency.addEventListener('input', () => {
     coverState.textTransparency = parseFloat(textTransparency.value);
-    $('lrc-cover-text-transparency-value').textContent = `${coverState.textTransparency.toFixed(2)}`;
+    $('lrc-cover-text-transparency-value').textContent = `${Math.round(coverState.textTransparency * 100)}%`;
     renderCoverPreview();
   });
 
@@ -356,18 +407,11 @@ function setupCoverParams() {
   lineSpacing.value = coverState.lineSpacing;
   lineSpacing.addEventListener('input', () => {
     coverState.lineSpacing = parseFloat(lineSpacing.value);
-    $('lrc-cover-line-spacing-value').textContent = `${parseFloat(lineSpacing.value).toFixed(1)}x`;
-    renderCoverPreview();
-  });
-
-  const creatorInput = $('lrc-cover-creator');
-  creatorInput.addEventListener('input', () => {
-    coverState.creator = creatorInput.value.trim();
+    $('lrc-cover-line-spacing-value').textContent = `${parseFloat(lineSpacing.value).toFixed(2)}x`;
     renderCoverPreview();
   });
 
   setupCoverAnchorGrid(updateAlignUI);
-  setupCoverCreatorPos();
 }
 
 async function setupCoverFontSelect() {

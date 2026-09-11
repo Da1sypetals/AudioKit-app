@@ -437,46 +437,58 @@
         </div>
         <div class="lrc-preview-meta" id="lrc-cover-preview-meta">选择背景图片后在此预览</div>
 
+        <!-- 参数区一律两栏：每个参数只占一栏，任何参数都不得贯穿两栏；
+             文字内容同样不贯穿两栏，而是左栏放主要文本框、右栏放次要文本框。 -->
         <div class="section-title">参数</div>
-        <div class="params">
-          <div class="param">
-            <div class="param-label">
-              <span>背景图片</span>
-            </div>
-            <div class="param-control">
-              <button class="step-btn" id="lrc-cover-pick-image">选择图片</button>
-              <span class="input-name unset" id="lrc-cover-image-name">未选择</span>
-            </div>
-          </div>
-          <div class="param cover-text-param">
-            <div class="param-label">
-              <span>文字内容</span>
-            </div>
-            <div class="param-control cover-text-pair">
-              <div class="cover-text-col">
-                <span class="cover-text-caption">主要</span>
+        <div class="params-cols">
+          <div class="params-col">
+            <div class="param cover-text-param">
+              <div class="param-label">
+                <span>文字内容</span>
+                <span class="param-hint">主要</span>
+              </div>
+              <div class="param-control">
                 <textarea id="lrc-cover-text" class="cover-text-input" spellcheck="false"
                   placeholder="主要文字内容，可多行"></textarea>
               </div>
-              <div class="cover-text-col">
-                <span class="cover-text-caption">次要</span>
-                <textarea id="lrc-cover-subtext" class="cover-text-input" spellcheck="false"
-                  placeholder="次要文字内容，显示在下方"></textarea>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>背景图片</span>
+              </div>
+              <div class="param-control">
+                <button class="step-btn" id="lrc-cover-pick-image">选择图片</button>
+                <span class="input-name unset" id="lrc-cover-image-name">未选择</span>
               </div>
             </div>
-          </div>
-          <div class="param">
-            <div class="param-label">
-              <span>次要文字大小倍数</span>
+            <div class="param">
+              <div class="param-label">
+                <span>背景模糊</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-blur" min="0" max="6" step="0.1" value="0.8">
+                <span class="param-value" id="lrc-cover-blur-value">0.8 px</span>
+              </div>
             </div>
-            <div class="param-control">
-              <input type="range" id="lrc-cover-subscale" min="0.1" max="1.2" step="0.01" value="0.4">
-              <span class="param-value" id="lrc-cover-subscale-value">0.40x</span>
+            <div class="param">
+              <div class="param-label">
+                <span>背景压暗</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-darken" min="0" max="80" step="1" value="20">
+                <span class="param-value" id="lrc-cover-darken-value">20%</span>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="params-cols">
-          <div class="params-col">
+            <div class="param">
+              <div class="param-label">
+                <span>饱和度</span>
+                <span class="param-hint">100%为原图</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-saturation" min="0" max="200" step="1" value="100">
+                <span class="param-value" id="lrc-cover-saturation-value">100%</span>
+              </div>
+            </div>
             <div class="param">
               <div class="param-label">
                 <span>文字颜色</span>
@@ -492,7 +504,16 @@
               </div>
               <div class="param-control">
                 <input type="range" id="lrc-cover-text-transparency" min="0" max="1" step="0.01" value="0.08">
-                <span class="param-value" id="lrc-cover-text-transparency-value">0.08</span>
+                <span class="param-value" id="lrc-cover-text-transparency-value">8%</span>
+              </div>
+            </div>
+            <div class="param">
+              <div class="param-label">
+                <span>次要文字大小倍数</span>
+              </div>
+              <div class="param-control">
+                <input type="range" id="lrc-cover-subscale" min="0.1" max="1.2" step="0.01" value="0.45">
+                <span class="param-value" id="lrc-cover-subscale-value">0.45x</span>
               </div>
             </div>
             <div class="param">
@@ -520,27 +541,18 @@
                 <input type="color" id="lrc-cover-shadow-color" value="#000000">
               </div>
             </div>
-            <div class="param">
-              <div class="param-label">
-                <span>输出格式</span>
-              </div>
-              <div class="param-control segmented-control">
-                <div class="segmented" id="lrc-cover-format">
-                  <button data-value="png" class="active">PNG</button>
-                  <button data-value="jpeg">JPEG</button>
-                </div>
-              </div>
-            </div>
-            <div class="param">
-              <div class="param-label">
-                <span>创作者：文字位置</span>
-              </div>
-              <div class="param-control anchor-control">
-                <div class="anchor-grid pos-grid" id="lrc-cover-creator-pos"></div>
-              </div>
-            </div>
           </div>
           <div class="params-col">
+            <div class="param cover-text-param">
+              <div class="param-label">
+                <span>文字内容</span>
+                <span class="param-hint">次要</span>
+              </div>
+              <div class="param-control">
+                <textarea id="lrc-cover-subtext" class="cover-text-input" spellcheck="false"
+                  placeholder="次要文字内容，显示在下方"></textarea>
+              </div>
+            </div>
             <div class="param">
               <div class="param-label">
                 <span>字幕锚点</span>
@@ -585,16 +597,19 @@
                 <span>行间距</span>
               </div>
               <div class="param-control">
-                <input type="range" id="lrc-cover-line-spacing" min="0.3" max="1.5" step="0.1" value="1.0">
-                <span class="param-value" id="lrc-cover-line-spacing-value">1.0x</span>
+                <input type="range" id="lrc-cover-line-spacing" min="0.4" max="1.6" step="0.05" value="1.0">
+                <span class="param-value" id="lrc-cover-line-spacing-value">1.00x</span>
               </div>
             </div>
             <div class="param">
               <div class="param-label">
-                <span>创作者</span>
+                <span>输出格式</span>
               </div>
-              <div class="param-control">
-                <input type="text" id="lrc-cover-creator" class="text-input" spellcheck="false" placeholder="留空则不显示">
+              <div class="param-control segmented-control">
+                <div class="segmented" id="lrc-cover-format">
+                  <button data-value="png" class="active">PNG</button>
+                  <button data-value="jpeg">JPEG</button>
+                </div>
               </div>
             </div>
           </div>

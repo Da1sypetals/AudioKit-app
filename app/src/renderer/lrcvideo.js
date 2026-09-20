@@ -40,7 +40,7 @@ const lrcState = {
   darken: 35,
   aspectIndex: 4, // 默认 16:9
   aspectFit: false,
-  tailHold: 4, // 最后一句结束后完整停留秒数，之后才开始淡出
+  tailHold: 8, // 最后一句结束后完整停留秒数，之后才开始淡出
   fontFamily: '我欲见你何惧春秋', // 空 = 默认系统字体栈；字体文件缺失时回退为 ''
   creator: '', // 创作者标注，空则不显示
   creatorPos: 4, // 6 位置：0 左上 1 上方 2 右上 3 左下 4 下方 5 右下

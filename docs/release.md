@@ -1,5 +1,7 @@
 # AudioKit 编译、构建、安装
 
+首先你可能需要测试你所实现的功能，查看 docs/test.md 以获取更多编写和运行测试的指引。
+
 ## 前置条件
 
 - Rust（cargo）、Node.js（npm）、Python 3（Pillow、numpy）

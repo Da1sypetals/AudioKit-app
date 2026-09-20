@@ -66,4 +66,5 @@
 
 ## Coding
 
+你需要先阅读docs/release.md, docs/test.md
 编写完代码之后，你必须进行构建、安装到/Applications，使用tools/release.sh
